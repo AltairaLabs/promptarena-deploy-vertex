@@ -45,11 +45,16 @@ func (p *Provider) ValidateConfig(
 		}, nil
 	}
 
-	errs := cfg.validateStructure()
+	var errs []string
+	errs = append(errs, cfg.validateStructure()...)
+	errs = append(errs, validateBindings(cfg.Providers)...)
+
+	warnings := bindingWarnings(cfg.Providers)
 
 	return &deploy.ValidateResponse{
-		Valid:  len(errs) == 0,
-		Errors: errs,
+		Valid:    len(errs) == 0,
+		Errors:   errs,
+		Warnings: warnings,
 	}, nil
 }
 

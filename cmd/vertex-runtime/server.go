@@ -25,7 +25,7 @@ func buildMux(turn turnFunc, stream streamFunc) *http.ServeMux {
 	return mux
 }
 
-// runServer listens on addr and serves until the context is cancelled or a
+// runServer listens on addr and serves until the context is canceled or a
 // termination signal arrives.
 func runServer(ctx context.Context, log *slog.Logger, addr string, mux *http.ServeMux) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)

@@ -52,6 +52,44 @@ func newTurnFunc(packFile, agentName string, opts []sdk.Option) turnFunc {
 	}
 }
 
+// streamRequest carries the fixed inputs for one streaming turn.
+type streamRequest struct {
+	PackFile  string
+	AgentName string
+	Opts      []sdk.Option
+	Input     map[string]any
+}
+
+// streamTurn runs one streaming turn, sending each text chunk to out. It
+// returns the terminal error, or nil when the turn completes normally.
+func streamTurn(ctx context.Context, req streamRequest, out chan<- string) error {
+	message, err := extractMessage(req.Input)
+	if err != nil {
+		return err
+	}
+
+	conv, err := sdk.Open(req.PackFile, req.AgentName, req.Opts...)
+	if err != nil {
+		return fmt.Errorf("open conversation: %w", err)
+	}
+
+	for chunk := range conv.Stream(ctx, message) {
+		if chunk.Error != nil {
+			return chunk.Error
+		}
+		if chunk.Type != sdk.ChunkText || chunk.Text == "" {
+			continue
+		}
+		select {
+		case out <- chunk.Text:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
 // newStreamFunc returns a streamFunc that opens a fresh conversation per
 // request and streams the turn's text chunks.
 func newStreamFunc(packFile, agentName string, opts []sdk.Option) streamFunc {
@@ -61,36 +99,19 @@ func newStreamFunc(packFile, agentName string, opts []sdk.Option) streamFunc {
 		out := make(chan string)
 		errCh := make(chan error, 1)
 
+		req := streamRequest{
+			PackFile:  packFile,
+			AgentName: agentName,
+			Opts:      opts,
+			Input:     input,
+		}
+
 		go func() {
 			defer close(out)
 			defer close(errCh)
 
-			message, err := extractMessage(input)
-			if err != nil {
+			if err := streamTurn(ctx, req, out); err != nil {
 				errCh <- err
-				return
-			}
-
-			conv, err := sdk.Open(packFile, agentName, opts...)
-			if err != nil {
-				errCh <- fmt.Errorf("open conversation: %w", err)
-				return
-			}
-
-			for chunk := range conv.Stream(ctx, message) {
-				if chunk.Error != nil {
-					errCh <- chunk.Error
-					return
-				}
-				if chunk.Type != sdk.ChunkText || chunk.Text == "" {
-					continue
-				}
-				select {
-				case out <- chunk.Text:
-				case <-ctx.Done():
-					errCh <- ctx.Err()
-					return
-				}
 			}
 		}()
 

@@ -21,7 +21,7 @@ const packFilePerm = 0o600
 // require a GCS client.
 type gcsFetcher func(ctx context.Context, uri string) ([]byte, error)
 
-// resolvePackFile materialises the pack as a local file in dir and returns its
+// resolvePackFile materializes the pack as a local file in dir and returns its
 // path. An inline pack takes precedence over a URI; the fetcher is only
 // consulted when the pack must be retrieved from GCS.
 func resolvePackFile(

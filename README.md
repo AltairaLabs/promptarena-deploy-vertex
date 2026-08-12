@@ -10,8 +10,39 @@ why this adapter is named `vertex`.
 
 | Component | Purpose |
 |---|---|
-| `promptarena-deploy-vertex` | JSON-RPC deploy adapter plugin (Phase 1b, not yet implemented) |
+| `promptarena-deploy-vertex` | JSON-RPC deploy adapter plugin |
 | `vertex-runtime` | Container entrypoint serving the Agent Runtime HTTP contract |
+
+## Adapter configuration
+
+```yaml
+deploy:
+  provider: vertex
+  vertex:
+    project: my-project
+    location: us-central1
+    image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-vertex-runtime
+    service_account: agent@my-project.iam.gserviceaccount.com
+    providers:
+      - name: default
+        role: llm
+        arena_provider: gemini-flash
+```
+
+`providers` is required. The binding named `default` is the primary provider; if
+none is named `default`, validation warns and names the binding that will be used.
+Each binding sets **either** `arena_provider` (inheriting type and model from the
+arena config) **or** `type` and `model` inline.
+
+Labels are sanitized to GCP's rules (lowercase `[a-z0-9_-]`, 63 characters, keys
+starting with a letter). Two keys that would sanitize to the same label are
+rejected rather than silently merged.
+
+### Adapter status
+
+`get_provider_info` and `validate_config` are implemented. `plan`, `apply`,
+`destroy`, `status` and `import` return a not-implemented error until the next
+phase.
 
 ## Runtime contract
 

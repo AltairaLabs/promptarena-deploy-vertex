@@ -51,6 +51,7 @@ func (p *Provider) ValidateConfig(
 	errs = append(errs, validateLabels(cfg.Labels)...)
 
 	warnings := bindingWarnings(cfg.Providers)
+	warnings = append(warnings, diagnoseConfig(cfg)...)
 
 	return &deploy.ValidateResponse{
 		Valid:    len(errs) == 0,

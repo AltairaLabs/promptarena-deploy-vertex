@@ -31,12 +31,26 @@ func (p *Provider) GetProviderInfo(_ context.Context) (*deploy.ProviderInfo, err
 	}, nil
 }
 
-// ValidateConfig is implemented in Task 6. Until then it reports success for
-// any syntactically valid JSON so the CLI handshake works end to end.
+// ValidateConfig parses and validates the provider configuration. Structural
+// problems become Errors; advisories become Warnings, which do not make the
+// config invalid.
 func (p *Provider) ValidateConfig(
-	_ context.Context, _ *deploy.ValidateRequest,
+	_ context.Context, req *deploy.ValidateRequest,
 ) (*deploy.ValidateResponse, error) {
-	return &deploy.ValidateResponse{Valid: true}, nil
+	cfg, err := parseConfig(req.Config)
+	if err != nil {
+		return &deploy.ValidateResponse{
+			Valid:  false,
+			Errors: []string{err.Error()},
+		}, nil
+	}
+
+	errs := cfg.validateStructure()
+
+	return &deploy.ValidateResponse{
+		Valid:  len(errs) == 0,
+		Errors: errs,
+	}, nil
 }
 
 // Plan is implemented in Phase 1b-ii.

@@ -3,11 +3,63 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/AltairaLabs/PromptKit/runtime/prompt"
 )
+
+// packDir is where the resolved pack file is written inside the container.
+const packDir = "/tmp"
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	log.Info("vertex-runtime starting", "version", Version)
+	if err := run(context.Background(), log); err != nil {
+		log.Error("fatal", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, log *slog.Logger) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+
+	packFile, err := resolvePackFile(ctx, cfg, packDir, fetchGCS)
+	if err != nil {
+		return fmt.Errorf("resolve pack: %w", err)
+	}
+
+	pack, err := prompt.LoadPack(packFile)
+	if err != nil {
+		return fmt.Errorf("load pack: %w", err)
+	}
+
+	agentName, err := resolveAgentName(cfg, pack)
+	if err != nil {
+		return err
+	}
+
+	opts, err := buildSDKOptions(cfg)
+	if err != nil {
+		return fmt.Errorf("provider bindings: %w", err)
+	}
+
+	log.Info("runtime configured",
+		"agent", agentName,
+		"pack", packFile,
+		"project", cfg.Project,
+		"location", cfg.Location,
+		"provider_options", len(opts))
+
+	mux := buildMux(
+		newTurnFunc(packFile, agentName, opts),
+		newStreamFunc(packFile, agentName, opts),
+	)
+	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
+
+	return runServer(ctx, log, addr, mux)
 }

@@ -48,6 +48,7 @@ func (p *Provider) ValidateConfig(
 	var errs []string
 	errs = append(errs, cfg.validateStructure()...)
 	errs = append(errs, validateBindings(cfg.Providers)...)
+	errs = append(errs, validateLabels(cfg.Labels)...)
 
 	warnings := bindingWarnings(cfg.Providers)
 

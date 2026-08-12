@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	cloud.google.com/go/storage v1.64.0
+	github.com/AltairaLabs/PromptKit/runtime v1.5.10
 	github.com/AltairaLabs/PromptKit/sdk v1.5.10
 )
 
@@ -16,7 +17,6 @@ require (
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/monitoring v1.29.0 // indirect
 	github.com/AltairaLabs/PromptKit/pkg v1.5.10 // indirect
-	github.com/AltairaLabs/PromptKit/runtime v1.5.10 // indirect
 	github.com/AltairaLabs/PromptKit/server/a2a v1.5.10 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0 // indirect

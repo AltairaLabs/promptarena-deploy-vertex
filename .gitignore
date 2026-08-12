@@ -1,4 +1,5 @@
 /vertex-runtime
 /promptarena-deploy-vertex
+/promptarena-deploy-vertex
 *.pack.json
 .DS_Store

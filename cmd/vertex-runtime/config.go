@@ -21,6 +21,11 @@ const (
 	// envTracingEnabled gates tracing. Off unless explicitly set, so an
 	// unconfigured deployment sends nothing and pays nothing.
 	envTracingEnabled = "PROMPTPACK_TRACING_ENABLED"
+
+	// envToolSpecs carries execution config for the pack's tools. The compiled
+	// pack has only their schemas, so without this a tool call has nothing to
+	// fulfil it and the model apologises instead of answering.
+	envToolSpecs = "PROMPTPACK_TOOL_SPECS"
 )
 
 // Fallback names for the GCP coordinates. Agent Runtime reserves these and
@@ -59,6 +64,7 @@ type runtimeConfig struct {
 	Port           int
 	OTLPEndpoint   string
 	TracingEnabled bool
+	ToolSpecsJSON  string
 }
 
 // loadConfig reads configuration from environment variables. Exactly one pack
@@ -79,6 +85,7 @@ func loadConfig() (*runtimeConfig, error) {
 	}
 
 	cfg.OTLPEndpoint = os.Getenv(envOTLPEndpoint)
+	cfg.ToolSpecsJSON = os.Getenv(envToolSpecs)
 
 	if raw := os.Getenv(envTracingEnabled); raw != "" {
 		enabled, parseErr := strconv.ParseBool(raw)

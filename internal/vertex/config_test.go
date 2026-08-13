@@ -126,3 +126,18 @@ func TestValidateStructure_Valid(t *testing.T) {
 		t.Errorf("expected no errors, got %v", errs)
 	}
 }
+
+func TestValidateStructure_TracingRequiresAnEndpoint(t *testing.T) {
+	cfg := &Config{
+		Project:       "p",
+		Location:      "us-central1",
+		ImageMode:     ImageModePrebuilt,
+		Image:         "us-central1-docker.pkg.dev/p/r/i",
+		Observability: &Observability{TracingEnabled: true},
+	}
+
+	if !strings.Contains(strings.Join(cfg.validateStructure(), "; "), "otlp_endpoint") {
+		t.Error("enabling tracing without an endpoint should be caught at validation, " +
+			"not discovered as a silently untraced deployment")
+	}
+}

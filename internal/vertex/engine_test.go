@@ -180,3 +180,30 @@ func TestBuildEngine_DescriptionNamesThePack(t *testing.T) {
 		t.Errorf("Description should name the pack, got %q", spec.Description)
 	}
 }
+
+func TestBuildEngine_NoObservabilityLeavesTracingUnset(t *testing.T) {
+	spec, _ := buildEngine(testEngineInput(), AgentInfo{Name: "assistant"})
+
+	if _, ok := spec.Env[envTracingEnabled]; ok {
+		t.Error("tracing env must be absent unless observability is configured")
+	}
+}
+
+func TestBuildEngine_TracingEnvInjected(t *testing.T) {
+	in := testEngineInput()
+	in.Cfg.Observability = &Observability{
+		TracingEnabled: true,
+		OTLPEndpoint:   "otel-collector:4317",
+	}
+
+	spec, errs := buildEngine(in, AgentInfo{Name: "assistant"})
+	if len(errs) != 0 {
+		t.Fatalf("buildEngine: %v", errs)
+	}
+	if spec.Env[envTracingEnabled] != "true" {
+		t.Errorf("%s = %q", envTracingEnabled, spec.Env[envTracingEnabled])
+	}
+	if spec.Env[envOTLPEndpoint] != "otel-collector:4317" {
+		t.Errorf("%s = %q", envOTLPEndpoint, spec.Env[envOTLPEndpoint])
+	}
+}

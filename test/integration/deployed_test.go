@@ -298,20 +298,61 @@ func TestDeployed_StreamQuery(t *testing.T) {
 	}
 }
 
-func TestDeployed_MultiTurn(t *testing.T) {
+// askDeployed sends one unary turn and returns the engine's output.
+func askDeployed(t *testing.T, name, location, message string) string {
+	t.Helper()
+
+	status, body, err := authedRequest(http.MethodPost,
+		engineURL(name, location, "query"),
+		fmt.Sprintf(`{"class_method":"query","input":{"message":%q}}`, message))
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+
+	var got struct {
+		Output string `json:"output"`
+	}
+	if unmarshalErr := json.Unmarshal([]byte(body), &got); unmarshalErr != nil {
+		t.Fatalf("unmarshal %q: %v", body, unmarshalErr)
+	}
+	return got.Output
+}
+
+// TestDeployed_SequentialTurnsAreIndependent pins the engine's actual
+// conversation semantics: every request opens a fresh PromptKit conversation,
+// so nothing carries between calls.
+//
+// This test used to be called TestDeployed_MultiTurn and asserted only that two
+// requests returned HTTP 200. It passed whether or not context carried, so it
+// proved nothing and its name promised something the runtime does not do.
+//
+// The second turn deliberately depends on the first. A stateless engine cannot
+// answer it, and asking the model to say so gives a checkable signal. If this
+// test starts failing because the engine DID remember, that is a real behaviour
+// change — wire up Agent Runtime sessions, then invert this assertion.
+func TestDeployed_SequentialTurnsAreIndependent(t *testing.T) {
 	env := requireEnv(t)
 	name := deployedEngine(t, env)
 
-	for i, msg := range []string{"What is 2+2?", "And what is 3+3?"} {
-		status, body, err := authedRequest(http.MethodPost,
-			engineURL(name, env.Location, "query"),
-			fmt.Sprintf(`{"class_method":"query","input":{"message":%q}}`, msg))
-		if err != nil {
-			t.Fatalf("turn %d: %v", i, err)
-		}
-		if status != http.StatusOK {
-			t.Fatalf("turn %d: status = %d, body = %s", i, status, body)
-		}
+	first := askDeployed(t, name, env.Location,
+		"Remember this number: 8675309. Just acknowledge it.")
+	if first == "" {
+		t.Fatal("empty output on the first turn")
+	}
+	t.Logf("turn 1: %s", first)
+
+	second := askDeployed(t, name, env.Location,
+		"What number did I just ask you to remember? "+
+			"If you have no record of it, reply exactly: NO_MEMORY")
+	t.Logf("turn 2: %s", second)
+
+	if strings.Contains(second, "8675309") {
+		t.Errorf("the engine recalled the first turn: %q\n"+
+			"conversation state now persists between requests — update the runtime "+
+			"protocol docs and invert this assertion", second)
 	}
 }
 

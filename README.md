@@ -11,6 +11,10 @@ Agent Runtime was formerly Vertex AI Agent Engine. The API resource is still
 `reasoningEngines` and the API host is still `aiplatform.googleapis.com`, which is
 why this adapter is named `vertex`.
 
+Full documentation lives in [`docs/`](docs/) and is published into the
+PromptArena documentation site. Run it standalone with
+`npm --prefix docs install && npm --prefix docs run dev`.
+
 ## Components
 
 | Component | Purpose |

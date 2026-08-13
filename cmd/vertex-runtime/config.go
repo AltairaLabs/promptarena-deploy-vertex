@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // Environment variable names read by the runtime.
@@ -13,6 +14,13 @@ const (
 	envProviders = "PROMPTPACK_PROVIDERS"
 	envProject   = "PROMPTPACK_PROJECT"
 	envLocation  = "PROMPTPACK_LOCATION"
+
+	// envOTLPEndpoint is the standard OpenTelemetry variable, used as-is so the
+	// image works with any OTLP collector rather than a name we invented.
+	envOTLPEndpoint = "OTEL_EXPORTER_OTLP_ENDPOINT"
+	// envTracingEnabled gates tracing. Off unless explicitly set, so an
+	// unconfigured deployment sends nothing and pays nothing.
+	envTracingEnabled = "PROMPTPACK_TRACING_ENABLED"
 )
 
 // Fallback names for the GCP coordinates. Agent Runtime reserves these and
@@ -41,14 +49,16 @@ const contractPort = 8080
 
 // runtimeConfig holds all configuration parsed from environment variables.
 type runtimeConfig struct {
-	PackJSON      string
-	PackURI       string
-	PackFile      string
-	AgentName     string
-	ProvidersJSON string
-	Project       string
-	Location      string
-	Port          int
+	PackJSON       string
+	PackURI        string
+	PackFile       string
+	AgentName      string
+	ProvidersJSON  string
+	Project        string
+	Location       string
+	Port           int
+	OTLPEndpoint   string
+	TracingEnabled bool
 }
 
 // loadConfig reads configuration from environment variables. Exactly one pack
@@ -66,6 +76,16 @@ func loadConfig() (*runtimeConfig, error) {
 
 	if cfg.PackJSON == "" && cfg.PackURI == "" {
 		return nil, fmt.Errorf("%s or %s is required", envPackJSON, envPackURI)
+	}
+
+	cfg.OTLPEndpoint = os.Getenv(envOTLPEndpoint)
+
+	if raw := os.Getenv(envTracingEnabled); raw != "" {
+		enabled, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid %s %q: %w", envTracingEnabled, raw, parseErr)
+		}
+		cfg.TracingEnabled = enabled
 	}
 
 	return cfg, nil

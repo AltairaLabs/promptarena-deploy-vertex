@@ -1,0 +1,26 @@
+{
+  "$schema": "https://promptpack.org/schema/latest/promptpack.schema.json",
+  "id": "vertex-guardrail",
+  "name": "Vertex Guardrail Pack",
+  "version": "1.0.0",
+  "description": "A length guardrail tight enough to fire on the mock provider's response",
+  "template_engine": {
+    "version": "v1",
+    "syntax": "{{variable}}"
+  },
+  "prompts": {
+    "support": {
+      "id": "support",
+      "name": "Support Agent",
+      "version": "1.0.0",
+      "system_template": "You are a support agent.",
+      "validators": [
+        {
+          "type": "length",
+          "enabled": true,
+          "params": { "max_characters": 5 }
+        }
+      ]
+    }
+  }
+}

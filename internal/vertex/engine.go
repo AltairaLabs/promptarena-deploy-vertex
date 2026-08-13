@@ -24,6 +24,11 @@ const (
 	envProviders = "PROMPTPACK_PROVIDERS"
 	envProject   = "PROMPTPACK_PROJECT"
 	envLocation  = "PROMPTPACK_LOCATION"
+
+	// These must match cmd/vertex-runtime/config.go. The adapter setting a name
+	// the runtime does not read is the silent failure this pairing prevents.
+	envTracingEnabled = "PROMPTPACK_TRACING_ENABLED"
+	envOTLPEndpoint   = "OTEL_EXPORTER_OTLP_ENDPOINT"
 )
 
 // engineInput is everything buildEngine needs, gathered once by Apply and
@@ -82,6 +87,11 @@ func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, 
 		envProviders: string(encodedBindings),
 		envProject:   in.Cfg.Project,
 		envLocation:  in.Cfg.Location,
+	}
+
+	if in.Cfg.Observability != nil && in.Cfg.Observability.TracingEnabled {
+		env[envTracingEnabled] = "true"
+		env[envOTLPEndpoint] = in.Cfg.Observability.OTLPEndpoint
 	}
 
 	if in.Delivery.Inline {

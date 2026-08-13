@@ -51,3 +51,43 @@ func TestLoadConfig_PackURIAlone(t *testing.T) {
 		t.Errorf("PackURI = %q", cfg.PackURI)
 	}
 }
+
+func TestLoadConfig_TracingDefaultsOff(t *testing.T) {
+	t.Setenv(envPackJSON, `{"id":"demo"}`)
+	t.Setenv(envOTLPEndpoint, "")
+	t.Setenv(envTracingEnabled, "")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.TracingEnabled {
+		t.Error("tracing must default to off so an unconfigured deployment pays nothing")
+	}
+}
+
+func TestLoadConfig_TracingEnabled(t *testing.T) {
+	t.Setenv(envPackJSON, `{"id":"demo"}`)
+	t.Setenv(envTracingEnabled, "true")
+	t.Setenv(envOTLPEndpoint, "otel-collector:4317")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if !cfg.TracingEnabled {
+		t.Error("TracingEnabled = false")
+	}
+	if cfg.OTLPEndpoint != "otel-collector:4317" {
+		t.Errorf("OTLPEndpoint = %q", cfg.OTLPEndpoint)
+	}
+}
+
+func TestLoadConfig_InvalidTracingFlag(t *testing.T) {
+	t.Setenv(envPackJSON, `{"id":"demo"}`)
+	t.Setenv(envTracingEnabled, "yes-please")
+
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("an unparseable tracing flag should fail loudly, not silently disable tracing")
+	}
+}

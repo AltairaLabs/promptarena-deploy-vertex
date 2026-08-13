@@ -157,3 +157,63 @@ func TestContract_MethodAndPayloadErrors(t *testing.T) {
 		t.Errorf("GET status = %d, want 405", resp.StatusCode)
 	}
 }
+
+// guardrailPackFile declares a max_characters limit tight enough that the mock
+// provider's response exceeds it, so the guardrail actually fires. A limit the
+// response can never reach would assert only that a validator can be
+// configured, not that it works.
+const guardrailPackFile = "testdata/guardrail.pack.json"
+
+func TestContract_GuardrailFiresAndRewritesTheResponse(t *testing.T) {
+	unguarded := contractServer(t, featuresPackFile, featuresAgent)
+	guarded := contractServer(t, guardrailPackFile, featuresAgent)
+
+	body := `{"class_method":"query","input":{"message":"hello"}}`
+
+	baseStatus, baseBody := postContract(t, unguarded+routeUnary, body)
+	if baseStatus != http.StatusOK {
+		t.Fatalf("unguarded status = %d, body = %s", baseStatus, baseBody)
+	}
+
+	gotStatus, gotBody := postContract(t, guarded+routeUnary, body)
+	if gotStatus != http.StatusOK {
+		t.Fatalf("guarded status = %d, body = %s", gotStatus, gotBody)
+	}
+
+	var unguardedOut, guardedOut contractResponse
+	if err := json.Unmarshal([]byte(baseBody), &unguardedOut); err != nil {
+		t.Fatalf("unmarshal unguarded: %v", err)
+	}
+	if err := json.Unmarshal([]byte(gotBody), &guardedOut); err != nil {
+		t.Fatalf("unmarshal guarded: %v", err)
+	}
+
+	if guardedOut.Output == unguardedOut.Output {
+		t.Errorf("guardrail did not change the response: both were %q — "+
+			"a max_characters limit of 5 must rewrite a longer answer",
+			guardedOut.Output)
+	}
+}
+
+// evalsPackFile declares a pack-level eval. Evals reach telemetry through the
+// eval runner's EvalCompleted event; guardrails do not emit that event, so a
+// pack needs an `evals` section for scores to appear in traces.
+const evalsPackFile = "testdata/evals.pack.json"
+
+func TestContract_EvalPackLoadsAndAnswers(t *testing.T) {
+	base := contractServer(t, evalsPackFile, featuresAgent)
+
+	status, body := postContract(t, base+routeUnary,
+		`{"class_method":"query","input":{"message":"hello"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+
+	var got contractResponse
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, body)
+	}
+	if got.Output == "" {
+		t.Error("expected a non-empty output from the mock provider")
+	}
+}

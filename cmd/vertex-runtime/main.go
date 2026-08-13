@@ -48,6 +48,16 @@ func run(ctx context.Context, log *slog.Logger) error {
 		return fmt.Errorf("provider bindings: %w", err)
 	}
 
+	shutdownTracing, traceOpts := setupTracing(cfg, log)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if shutdownErr := shutdownTracing(shutdownCtx); shutdownErr != nil {
+			log.Error("tracing shutdown", "error", shutdownErr)
+		}
+	}()
+	opts = append(opts, traceOpts...)
+
 	log.Info("runtime configured",
 		"agent", agentName,
 		"pack", packFile,

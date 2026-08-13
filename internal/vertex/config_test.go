@@ -141,3 +141,40 @@ func TestValidateStructure_TracingRequiresAnEndpoint(t *testing.T) {
 			"not discovered as a silently untraced deployment")
 	}
 }
+
+// A host:port endpoint produces "http:///v1/traces" in the exporter — no host —
+// so every export fails while the deployment looks healthy. Catch it at
+// validation instead.
+func TestValidateStructure_OTLPEndpointMustBeAURL(t *testing.T) {
+	cfg := &Config{
+		Project:   "p",
+		Location:  "us-central1",
+		ImageMode: ImageModePrebuilt,
+		Image:     "us-central1-docker.pkg.dev/p/r/i",
+		Observability: &Observability{
+			TracingEnabled: true,
+			OTLPEndpoint:   "collector:4318",
+		},
+	}
+
+	if !strings.Contains(strings.Join(cfg.validateStructure(), "; "), "full URL") {
+		t.Error("a host:port OTLP endpoint should be rejected")
+	}
+}
+
+func TestValidateStructure_OTLPEndpointURLAccepted(t *testing.T) {
+	cfg := &Config{
+		Project:   "p",
+		Location:  "us-central1",
+		ImageMode: ImageModePrebuilt,
+		Image:     "us-central1-docker.pkg.dev/p/r/i",
+		Observability: &Observability{
+			TracingEnabled: true,
+			OTLPEndpoint:   "http://collector:4318",
+		},
+	}
+
+	if errs := cfg.validateStructure(); len(errs) != 0 {
+		t.Errorf("a URL endpoint should validate, got %v", errs)
+	}
+}

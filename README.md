@@ -89,6 +89,56 @@ itself. The adapter therefore passes `PROMPTPACK_PROJECT` and
 back to the conventional ones. The same image runs unchanged on hosts that
 inject nothing.
 
+## Observability
+
+Tracing is **off by default** — an unconfigured deployment sends nothing and
+pays nothing. Enable it in the deploy config:
+
+```yaml
+deploy:
+  vertex:
+    observability:
+      tracing_enabled: true
+      otlp_endpoint: http://collector:4318
+```
+
+`otlp_endpoint` must be a **full URL including the scheme**. The exporter builds
+its target with `otlptracehttp.WithEndpointURL`, so a `host:port` value produces
+`http:///v1/traces` — no host — and every export fails while the deployment looks
+healthy. Validation rejects it.
+
+The adapter injects `PROMPTPACK_TRACING_ENABLED` and the standard
+`OTEL_EXPORTER_OTLP_ENDPOINT`, so the same image works with any OTLP collector.
+
+### What was actually observed
+
+Verified against a local `otel/opentelemetry-collector-contrib`:
+
+```
+Resource attributes:
+  -> service.name: Str(vertex-runtime)
+InstrumentationScope github.com/AltairaLabs/PromptKit 1.0.0
+Span: gemini chat
+  -> gen_ai.operation.name: Str(chat)
+  -> gen_ai.system: Str(gemini)
+  -> gen_ai.request.model: Str(gemini-2.5-flash)
+  -> gen_ai.usage.input_tokens: Int(0)
+  -> promptkit.message.count: Int(1)
+  -> promptkit.tool.count: Int(0)
+```
+
+**Eval scores did not appear.** PromptKit's `telemetry.OTelEventListener` maps
+`EventEvalCompleted` to a `gen_ai.evaluation.score` attribute, but no span
+carried it — even on a turn where a `length` guardrail demonstrably fired and
+truncated the response. Provider-level tracing works; eval-result visibility does
+not yet, and is tracked in issue #8.
+
+### Not verified
+
+Whether Google Cloud Trace accepts OTLP directly from an Agent Runtime
+container, and on what host and credentials, is **untested**. Point
+`otlp_endpoint` at a collector you control.
+
 ### A2A
 
 Agent cards are generated but **not yet attached**: `ReasoningEngineSpec.agentCard`

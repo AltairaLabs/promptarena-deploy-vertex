@@ -123,6 +123,19 @@ func (c *Config) validateObservability() []string {
 			"observability.otlp_endpoint is required when observability.tracing_enabled is true",
 		}
 	}
+
+	// The exporter builds its target with otlptracehttp.WithEndpointURL, which
+	// needs a full URL. A host:port value yields "http:///v1/traces" — no host —
+	// and every export fails at runtime while the deployment looks healthy.
+	if c.Observability.OTLPEndpoint != "" &&
+		!strings.HasPrefix(c.Observability.OTLPEndpoint, "http://") &&
+		!strings.HasPrefix(c.Observability.OTLPEndpoint, "https://") {
+		return []string{fmt.Sprintf(
+			"observability.otlp_endpoint %q must be a full URL including scheme "+
+				"(for example http://collector:4318), not host:port",
+			c.Observability.OTLPEndpoint)}
+	}
+
 	return nil
 }
 

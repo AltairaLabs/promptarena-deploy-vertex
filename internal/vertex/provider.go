@@ -91,6 +91,17 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 	if err != nil {
 		return nil, err
 	}
+	agents, err := enumerateAgents(req.PackJSON)
+	if err != nil {
+		return nil, err
+	}
+	id, err := packID(req.PackJSON)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = agents, id
+	_ = decidePackDelivery(req.PackJSON, cfg)
+	_ = hasA2ATools(req.PackJSON)
 	_ = configHash
 	_ = hashPack(req.PackJSON)
 

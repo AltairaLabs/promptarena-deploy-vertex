@@ -11,9 +11,29 @@ const (
 	envPackURI   = "PROMPTPACK_PACK_URI"
 	envAgentName = "PROMPTPACK_AGENT"
 	envProviders = "PROMPTPACK_PROVIDERS"
-	envProject   = "GOOGLE_CLOUD_PROJECT"
-	envLocation  = "GOOGLE_CLOUD_LOCATION"
+	envProject   = "PROMPTPACK_PROJECT"
+	envLocation  = "PROMPTPACK_LOCATION"
 )
+
+// Fallback names for the GCP coordinates. Agent Runtime reserves these and
+// rejects a deployment that sets them, but injects them into the container
+// itself — so on Agent Runtime these are what actually resolve. The adapter
+// sets the PROMPTPACK_-prefixed names above so the same image also runs on
+// hosts that do not inject anything.
+const (
+	envProjectFallback  = "GOOGLE_CLOUD_PROJECT"
+	envLocationFallback = "GOOGLE_CLOUD_LOCATION"
+)
+
+// firstEnv returns the first non-empty environment variable among names.
+func firstEnv(names ...string) string {
+	for _, name := range names {
+		if v := os.Getenv(name); v != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 // contractPort is fixed by the Agent Runtime contract: the container must
 // listen for HTTP requests on 0.0.0.0 port 8080. It is not configurable.
@@ -39,8 +59,8 @@ func loadConfig() (*runtimeConfig, error) {
 		PackURI:       os.Getenv(envPackURI),
 		AgentName:     os.Getenv(envAgentName),
 		ProvidersJSON: os.Getenv(envProviders),
-		Project:       os.Getenv(envProject),
-		Location:      os.Getenv(envLocation),
+		Project:       firstEnv(envProject, envProjectFallback),
+		Location:      firstEnv(envLocation, envLocationFallback),
 		Port:          contractPort,
 	}
 

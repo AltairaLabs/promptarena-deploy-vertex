@@ -1,4 +1,7 @@
 /vertex-runtime
 /promptarena-deploy-vertex
+/promptarena-deploy-vertex
 *.pack.json
+!cmd/vertex-runtime/testdata/*.pack.json
+coverage.out
 .DS_Store

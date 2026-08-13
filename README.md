@@ -127,11 +127,44 @@ Span: gemini chat
   -> promptkit.tool.count: Int(0)
 ```
 
-**Eval scores did not appear.** PromptKit's `telemetry.OTelEventListener` maps
-`EventEvalCompleted` to a `gen_ai.evaluation.score` attribute, but no span
-carried it — even on a turn where a `length` guardrail demonstrably fired and
-truncated the response. Provider-level tracing works; eval-result visibility does
-not yet, and is tracked in issue #8.
+Eval results reach telemetry too, when the pack declares them:
+
+```
+Attributes:
+  -> gen_ai.evaluation.name: Str(response-length)
+  -> promptkit.eval.type: Str(max_length)
+  -> promptkit.guardrail: Bool(false)
+  -> gen_ai.evaluation.score: Double(1)
+  -> gen_ai.evaluation.explanation: Str(length 22, max 500)
+```
+
+### Evals are traced; guardrails are not
+
+This distinction matters and is easy to trip over.
+
+An **eval** — declared in the pack's `evals` section — runs through the eval
+runner, which emits `EventEvalCompleted`. The telemetry listener turns that into
+the span attributes above.
+
+A **guardrail** — a `validators` entry on a prompt — computes using the same eval
+handlers but runs through the guardrail hook adapter, which emits **no event**. A
+firing guardrail rewrites the response and leaves no trace attribute behind. The
+listener even has a `promptkit.guardrail` flag for the distinction; nothing
+currently sets it true.
+
+So a pack with only `validators` produces provider spans but no evaluation
+scores. Declare an `evals` section to see scores:
+
+```json
+"evals": [
+  {
+    "id": "response-length",
+    "type": "max_length",
+    "trigger": "every_turn",
+    "params": { "max_characters": 500 }
+  }
+]
+```
 
 ### Not verified
 

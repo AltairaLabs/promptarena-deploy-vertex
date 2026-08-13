@@ -70,6 +70,19 @@ func TestBuildEngine_StagedPackRequiresURI(t *testing.T) {
 	}
 }
 
+// Agent Runtime rejects a create that sets GOOGLE_CLOUD_PROJECT or
+// GOOGLE_CLOUD_LOCATION — they are reserved names — so the adapter injects the
+// PROMPTPACK_-prefixed equivalents instead.
+func TestBuildEngine_DoesNotSetReservedEnvVars(t *testing.T) {
+	spec, _ := buildEngine(testEngineInput(), AgentInfo{Name: "assistant"})
+
+	for _, reserved := range []string{"GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"} {
+		if _, ok := spec.Env[reserved]; ok {
+			t.Errorf("%s is reserved by Agent Runtime and must not be injected", reserved)
+		}
+	}
+}
+
 func TestBuildEngine_ProjectAndLocationEnv(t *testing.T) {
 	spec, _ := buildEngine(testEngineInput(), AgentInfo{Name: "assistant"})
 

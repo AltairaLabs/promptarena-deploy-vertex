@@ -7,13 +7,23 @@ import (
 
 // Environment variable names injected into the runtime container. These must
 // match cmd/vertex-runtime/config.go exactly.
+//
+// The GCP coordinates use PROMPTPACK_-prefixed names rather than
+// GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION. Agent Runtime reserves those
+// names and rejects a create that sets them ("Environment variable name
+// 'GOOGLE_CLOUD_PROJECT' is reserved") — it reserves them because it injects
+// them into the container itself, which a deployed engine confirms.
+//
+// The prefixed names are still set so the same image runs unchanged on hosts
+// that do not inject them (Cloud Run, a local shell, CI). The runtime reads the
+// prefixed names first and falls back to the conventional ones.
 const (
 	envPackJSON  = "PROMPTPACK_PACK_JSON"
 	envPackURI   = "PROMPTPACK_PACK_URI"
 	envAgentName = "PROMPTPACK_AGENT"
 	envProviders = "PROMPTPACK_PROVIDERS"
-	envProject   = "GOOGLE_CLOUD_PROJECT"
-	envLocation  = "GOOGLE_CLOUD_LOCATION"
+	envProject   = "PROMPTPACK_PROJECT"
+	envLocation  = "PROMPTPACK_LOCATION"
 )
 
 // engineInput is everything buildEngine needs, gathered once by Apply and

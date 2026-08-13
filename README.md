@@ -50,10 +50,50 @@ rejected rather than silently merged.
 | `get_provider_info` | Implemented |
 | `validate_config` | Implemented |
 | `plan` | Implemented |
-| `apply` | Not implemented |
+| `apply` | Implemented |
 | `destroy` | Not implemented |
 | `status` | Not implemented |
 | `import` | Not implemented |
+
+### Deploying: prerequisites
+
+`apply` creates one Agent Runtime engine per pack agent from the configured
+container image. Two things must be in place first, both of which fail *after*
+the engine is created rather than at validation time:
+
+**1. The runtime image must live in Artifact Registry.** Agent Runtime cannot
+pull from `ghcr.io` directly — use an AR remote repository as a pull-through
+cache, or push the image to AR directly.
+
+**2. The Reasoning Engine Service Agent needs read access to it:**
+
+```bash
+gcloud artifacts repositories add-iam-policy-binding <REPO> \
+  --location=<LOCATION> --project=<PROJECT> \
+  --member="serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com" \
+  --role=roles/artifactregistry.reader
+```
+
+Without it the create succeeds and the engine then fails to start with an image
+access error.
+
+If `service_account` is unset, the engine runs as the Reasoning Engine Service
+Agent, which needs `roles/aiplatform.user` to call models.
+
+### Reserved environment variables
+
+Agent Runtime **reserves** `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`
+and rejects a deployment that sets them — it injects them into the container
+itself. The adapter therefore passes `PROMPTPACK_PROJECT` and
+`PROMPTPACK_LOCATION`, and the runtime reads the prefixed names first, falling
+back to the conventional ones. The same image runs unchanged on hosts that
+inject nothing.
+
+### A2A
+
+Agent cards are generated but **not yet attached**: `ReasoningEngineSpec.agentCard`
+exists in the v1beta1 REST API but is absent from the published protos, so the Go
+client cannot set it. See issue #3.
 
 `plan` performs no GCP calls: it diffs the pack and config hashes against prior
 adapter state and reports the resource changes a deploy would make.

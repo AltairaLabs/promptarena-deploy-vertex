@@ -37,6 +37,14 @@ func diagnoseConfig(cfg *Config) []string {
 				"compute service account, which usually lacks roles/aiplatform.user")
 	}
 
+	if cfg.ImageMode == ImageModePrebuilt && cfg.Image != "" {
+		warnings = append(warnings,
+			"the Reasoning Engine Service Agent "+
+				"(service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com) "+
+				"needs roles/artifactregistry.reader on the image's repository, or the "+
+				"engine is created and then fails to start with an image access error")
+	}
+
 	if cfg.ImageMode == ImageModeCloudBuild && cfg.DockerfilePath != "" {
 		warnings = append(warnings,
 			"dockerfile_path bypasses the generated Dockerfile, so honoring the Agent "+

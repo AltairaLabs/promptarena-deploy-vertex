@@ -1,0 +1,159 @@
+package main
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// featuresPackFile is a pack declaring tools, a validator and a template
+// variable — the features a trivial pack never exercises.
+const featuresPackFile = "testdata/features.pack.json"
+
+// featuresAgent is the only prompt in featuresPackFile.
+const featuresAgent = "support"
+
+// contractServer starts the real contract mux backed by the given pack and the
+// mock provider, and returns its base URL. No container and no network beyond
+// the loopback httptest listener.
+func contractServer(t *testing.T, packFile, agentName string) string {
+	t.Helper()
+
+	mux := buildMux(
+		newTurnFunc(packFile, agentName, mockOpts()),
+		newStreamFunc(packFile, agentName, mockOpts()),
+	)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// postContract sends a contract request and returns the status and raw body.
+func postContract(t *testing.T, url, body string) (int, string) {
+	t.Helper()
+
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("post %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	out, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		t.Fatalf("read body: %v", readErr)
+	}
+	return resp.StatusCode, string(out)
+}
+
+func TestContract_FeaturePackLoadsAndAnswers(t *testing.T) {
+	base := contractServer(t, featuresPackFile, featuresAgent)
+
+	status, body := postContract(t, base+routeUnary,
+		`{"class_method":"query","input":{"message":"where is order 42?"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+
+	var got contractResponse
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, body)
+	}
+	if got.Output == "" {
+		t.Error("expected a non-empty output from the mock provider")
+	}
+}
+
+// A pack declaring tools builds a different pipeline than one without. This
+// asserts the tool-bearing pipeline still serves the contract; whether a model
+// chooses to call the tool is a Layer B question the mock provider cannot
+// answer.
+func TestContract_ToolDeclarationDoesNotBreakTheTurn(t *testing.T) {
+	base := contractServer(t, featuresPackFile, featuresAgent)
+
+	status, body := postContract(t, base+routeUnary,
+		`{"class_method":"query","input":{"message":"hello"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+}
+
+func TestContract_UnknownAgentFails(t *testing.T) {
+	base := contractServer(t, featuresPackFile, "no-such-agent")
+
+	status, _ := postContract(t, base+routeUnary,
+		`{"class_method":"query","input":{"message":"hi"}}`)
+	if status != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for an agent that is not in the pack", status)
+	}
+}
+
+func TestContract_StreamingOverHTTP(t *testing.T) {
+	base := contractServer(t, featuresPackFile, featuresAgent)
+
+	status, body := postContract(t, base+routeStream,
+		`{"class_method":"stream_query","input":{"message":"hello"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	if len(lines) == 0 {
+		t.Fatal("expected at least one ndjson line")
+	}
+	for i, line := range lines {
+		var chunk contractResponse
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			t.Fatalf("line %d is not JSON: %v (%q)", i, err, line)
+		}
+	}
+}
+
+// Each request opens its own conversation, so a second call must succeed on its
+// own rather than depending on the first. This pins the current per-request
+// isolation: if session sharing is added later, this test should be replaced
+// deliberately, not silently.
+func TestContract_MultiTurnIsIndependent(t *testing.T) {
+	base := contractServer(t, featuresPackFile, featuresAgent)
+
+	for i, msg := range []string{"first question", "second question"} {
+		status, body := postContract(t, base+routeUnary,
+			`{"class_method":"query","input":{"message":"`+msg+`"}}`)
+		if status != http.StatusOK {
+			t.Fatalf("turn %d: status = %d, body = %s", i, status, body)
+		}
+	}
+}
+
+func TestContract_MethodAndPayloadErrors(t *testing.T) {
+	base := contractServer(t, featuresPackFile, featuresAgent)
+
+	tests := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"malformed json", `{not json`, http.StatusBadRequest},
+		{"missing message", `{"class_method":"query","input":{}}`, http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, _ := postContract(t, base+routeUnary, tt.body)
+			if status != tt.want {
+				t.Errorf("status = %d, want %d", status, tt.want)
+			}
+		})
+	}
+
+	resp, err := http.Get(base + routeUnary)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET status = %d, want 405", resp.StatusCode)
+	}
+}

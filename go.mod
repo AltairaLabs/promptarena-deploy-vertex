@@ -7,9 +7,11 @@ require (
 	cloud.google.com/go/storage v1.64.0
 	github.com/AltairaLabs/PromptKit/runtime v1.5.10
 	github.com/AltairaLabs/PromptKit/sdk v1.5.10
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.293.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -100,7 +102,6 @@ require (
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect

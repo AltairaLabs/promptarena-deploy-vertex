@@ -1,0 +1,28 @@
+{
+  "$schema": "https://promptpack.org/schema/latest/promptpack.schema.json",
+  "id": "vertex-evals",
+  "name": "Vertex Evals Pack",
+  "version": "1.0.0",
+  "description": "Declares a pack-level eval so eval results reach telemetry",
+  "template_engine": {
+    "version": "v1",
+    "syntax": "{{variable}}"
+  },
+  "prompts": {
+    "support": {
+      "id": "support",
+      "name": "Support Agent",
+      "version": "1.0.0",
+      "system_template": "You are a terse support agent."
+    }
+  },
+  "evals": [
+    {
+      "id": "response-length",
+      "type": "max_length",
+      "trigger": "every_turn",
+      "description": "Scores every assistant turn on response length",
+      "params": { "max_characters": 500 }
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 /vertex-runtime
 /promptarena-deploy-vertex
-/promptarena-deploy-vertex
 *.pack.json
 !cmd/vertex-runtime/testdata/*.pack.json
 coverage.out
 .DS_Store
 dist/
+docs/node_modules/
+docs/dist/
+docs/.astro/

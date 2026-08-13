@@ -1,4 +1,4 @@
-.PHONY: fmt lint test build build-adapter build-runtime docker-build check install-hooks
+.PHONY: fmt lint test test-integration build build-adapter build-runtime docker-build check install-hooks
 
 fmt:
 	GOWORK=off goimports -w -local github.com/AltairaLabs/promptarena-deploy-vertex .
@@ -8,6 +8,12 @@ lint:
 
 test:
 	GOWORK=off go test ./... -race -count=1
+
+# Deployed integration tests. These create billable GCP resources and are
+# skipped unless VERTEX_TEST_PROJECT and VERTEX_TEST_IMAGE are set.
+# See test/integration/README.md.
+test-integration:
+	GOWORK=off go test -tags=integration ./test/integration/ -v -count=1 -timeout=30m
 
 build: build-adapter build-runtime
 

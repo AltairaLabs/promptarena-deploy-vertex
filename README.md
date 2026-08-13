@@ -11,6 +11,10 @@ Agent Runtime was formerly Vertex AI Agent Engine. The API resource is still
 `reasoningEngines` and the API host is still `aiplatform.googleapis.com`, which is
 why this adapter is named `vertex`.
 
+Full documentation lives in [`docs/`](docs/) and is published into the
+PromptArena documentation site. Run it standalone with
+`npm --prefix docs install && npm --prefix docs run dev`.
+
 ## Components
 
 | Component | Purpose |
@@ -109,6 +113,89 @@ itself. The adapter therefore passes `PROMPTPACK_PROJECT` and
 back to the conventional ones. The same image runs unchanged on hosts that
 inject nothing.
 
+## Observability
+
+Tracing is **off by default** — an unconfigured deployment sends nothing and
+pays nothing. Enable it in the deploy config:
+
+```yaml
+deploy:
+  vertex:
+    observability:
+      tracing_enabled: true
+      otlp_endpoint: http://collector:4318
+```
+
+`otlp_endpoint` must be a **full URL including the scheme**. The exporter builds
+its target with `otlptracehttp.WithEndpointURL`, so a `host:port` value produces
+`http:///v1/traces` — no host — and every export fails while the deployment looks
+healthy. Validation rejects it.
+
+The adapter injects `PROMPTPACK_TRACING_ENABLED` and the standard
+`OTEL_EXPORTER_OTLP_ENDPOINT`, so the same image works with any OTLP collector.
+
+### What was actually observed
+
+Verified against a local `otel/opentelemetry-collector-contrib`:
+
+```
+Resource attributes:
+  -> service.name: Str(vertex-runtime)
+InstrumentationScope github.com/AltairaLabs/PromptKit 1.0.0
+Span: gemini chat
+  -> gen_ai.operation.name: Str(chat)
+  -> gen_ai.system: Str(gemini)
+  -> gen_ai.request.model: Str(gemini-2.5-flash)
+  -> gen_ai.usage.input_tokens: Int(0)
+  -> promptkit.message.count: Int(1)
+  -> promptkit.tool.count: Int(0)
+```
+
+Eval results reach telemetry too, when the pack declares them:
+
+```
+Attributes:
+  -> gen_ai.evaluation.name: Str(response-length)
+  -> promptkit.eval.type: Str(max_length)
+  -> promptkit.guardrail: Bool(false)
+  -> gen_ai.evaluation.score: Double(1)
+  -> gen_ai.evaluation.explanation: Str(length 22, max 500)
+```
+
+### Evals are traced; guardrails are not
+
+This distinction matters and is easy to trip over.
+
+An **eval** — declared in the pack's `evals` section — runs through the eval
+runner, which emits `EventEvalCompleted`. The telemetry listener turns that into
+the span attributes above.
+
+A **guardrail** — a `validators` entry on a prompt — computes using the same eval
+handlers but runs through the guardrail hook adapter, which emits **no event**. A
+firing guardrail rewrites the response and leaves no trace attribute behind. The
+listener even has a `promptkit.guardrail` flag for the distinction; nothing
+currently sets it true.
+
+So a pack with only `validators` produces provider spans but no evaluation
+scores. Declare an `evals` section to see scores:
+
+```json
+"evals": [
+  {
+    "id": "response-length",
+    "type": "max_length",
+    "trigger": "every_turn",
+    "params": { "max_characters": 500 }
+  }
+]
+```
+
+### Not verified
+
+Whether Google Cloud Trace accepts OTLP directly from an Agent Runtime
+container, and on what host and credentials, is **untested**. Point
+`otlp_endpoint` at a collector you control.
+
 ### A2A
 
 Agent cards are generated but **not yet attached**: `ReasoningEngineSpec.agentCard`
@@ -166,10 +253,38 @@ turn fails after streaming has begun, the failure arrives as a trailing
 | `PROMPTPACK_PACK_URI` | `gs://bucket/object` pack location, used when the pack is too large to inline |
 | `PROMPTPACK_AGENT` | Which agent to serve; defaults to `agents.entry` or the pack's single prompt |
 | `PROMPTPACK_PROVIDERS` | JSON list of resolved provider bindings |
+| `PROMPTPACK_TOOL_SPECS` | JSON map of tool name to execution config; absent when the arena declares no tools |
 | `GOOGLE_CLOUD_PROJECT` | GCP project for Vertex model routing |
 | `GOOGLE_CLOUD_LOCATION` | GCP region for Vertex model routing |
 
 One of `PROMPTPACK_PACK_JSON` or `PROMPTPACK_PACK_URI` is required.
+
+### Tools
+
+A compiled pack carries a tool's *schema* — name, description, parameters — but
+not how to run it. Execution config lives in the arena config under `tool_specs`,
+which the CLI passes to the adapter, and which the adapter forwards to the engine
+as `PROMPTPACK_TOOL_SPECS`. **Without an arena config, a deployed agent advertises
+its tools to the model and then has nothing to fulfill the calls** — the model
+apologizes instead of answering.
+
+Supported modes:
+
+| Mode | Support |
+|---|---|
+| `mock` | Full. `mock_result` and `mock_template`, with the same semantics as `promptarena run`: a rendered template is parsed back as JSON, falling back to `{"result": "<text>"}`. |
+| `live` | HTTP `url` and `method` only. Headers, timeouts and request/response mapping are not forwarded yet. |
+| `mcp`, `exec`, `client` | Not supported. Each needs a resource the container does not have — an MCP server, a subprocess, or a client on the other end of the connection. |
+
+Tools in an unsupported mode are logged once at startup and left unregistered,
+rather than failing the deployment: the rest of the agent still works.
+
+Changing a tool spec changes the plan's config hash, so editing a `mock_result`
+shows up as an update rather than silently leaving the old value deployed.
+
+Verified against a deployed engine: with a `mock_template` returning a status
+string that appears nowhere in the prompt, `gemini-2.5-flash` calls the tool and
+answers with the tool's value (`test/integration/deployed_test.go`).
 
 ### Provider bindings
 

@@ -27,11 +27,11 @@ func TestHashPlanConfig_StableAcrossCalls(t *testing.T) {
 	cfg := &Config{Project: "p", Location: "us-central1", Image: "img"}
 	resolved := []ResolvedBinding{{Name: "default", Role: RoleLLM, Type: "gemini", Model: "m"}}
 
-	first, err := hashPlanConfig(cfg, resolved)
+	first, err := hashPlanConfig(cfg, resolved, "")
 	if err != nil {
 		t.Fatalf("hashPlanConfig: %v", err)
 	}
-	second, err := hashPlanConfig(cfg, resolved)
+	second, err := hashPlanConfig(cfg, resolved, "")
 	if err != nil {
 		t.Fatalf("hashPlanConfig: %v", err)
 	}
@@ -45,11 +45,11 @@ func TestHashPlanConfig_IgnoresLabelOrder(t *testing.T) {
 	a := &Config{Project: "p", Location: "l", Labels: map[string]string{"x": "1", "y": "2"}}
 	b := &Config{Project: "p", Location: "l", Labels: map[string]string{"y": "2", "x": "1"}}
 
-	hashA, err := hashPlanConfig(a, resolved)
+	hashA, err := hashPlanConfig(a, resolved, "")
 	if err != nil {
 		t.Fatalf("hashPlanConfig: %v", err)
 	}
-	hashB, err := hashPlanConfig(b, resolved)
+	hashB, err := hashPlanConfig(b, resolved, "")
 	if err != nil {
 		t.Fatalf("hashPlanConfig: %v", err)
 	}
@@ -63,8 +63,8 @@ func TestHashPlanConfig_ChangesWithServiceAccount(t *testing.T) {
 	a := &Config{Project: "p", Location: "l"}
 	b := &Config{Project: "p", Location: "l", ServiceAccount: "sa@p.iam.gserviceaccount.com"}
 
-	hashA, _ := hashPlanConfig(a, resolved)
-	hashB, _ := hashPlanConfig(b, resolved)
+	hashA, _ := hashPlanConfig(a, resolved, "")
+	hashB, _ := hashPlanConfig(b, resolved, "")
 	if hashA == hashB {
 		t.Error("service_account change should change the config hash")
 	}
@@ -75,10 +75,37 @@ func TestHashPlanConfig_ChangesWithBindings(t *testing.T) {
 	a := []ResolvedBinding{{Name: "default", Role: RoleLLM, Type: "gemini", Model: "m1"}}
 	b := []ResolvedBinding{{Name: "default", Role: RoleLLM, Type: "gemini", Model: "m2"}}
 
-	hashA, _ := hashPlanConfig(cfg, a)
-	hashB, _ := hashPlanConfig(cfg, b)
+	hashA, _ := hashPlanConfig(cfg, a, "")
+	hashB, _ := hashPlanConfig(cfg, b, "")
 	if hashA == hashB {
 		t.Error("a model change should change the config hash")
+	}
+}
+
+func TestHashPlanConfig_ChangesWithToolSpecs(t *testing.T) {
+	resolved := []ResolvedBinding{{Name: "default", Role: RoleLLM, Type: "g", Model: "m"}}
+	cfg := &Config{Project: "p", Location: "l"}
+
+	hashA, _ := hashPlanConfig(cfg, resolved, `{"t":{"mode":"mock","mock_result":"a"}}`)
+	hashB, _ := hashPlanConfig(cfg, resolved, `{"t":{"mode":"mock","mock_result":"b"}}`)
+	if hashA == hashB {
+		t.Error("a mock_result change should change the config hash; " +
+			"tool specs are deployed as container env")
+	}
+}
+
+func TestHashPlanConfig_ChangesWithObservability(t *testing.T) {
+	resolved := []ResolvedBinding{{Name: "default", Role: RoleLLM, Type: "g", Model: "m"}}
+	a := &Config{Project: "p", Location: "l"}
+	b := &Config{Project: "p", Location: "l", Observability: &Observability{
+		TracingEnabled: true,
+		OTLPEndpoint:   "http://collector:4317",
+	}}
+
+	hashA, _ := hashPlanConfig(a, resolved, "")
+	hashB, _ := hashPlanConfig(b, resolved, "")
+	if hashA == hashB {
+		t.Error("enabling tracing should change the config hash")
 	}
 }
 
@@ -87,8 +114,8 @@ func TestHashPlanConfig_IgnoresDryRun(t *testing.T) {
 	a := &Config{Project: "p", Location: "l"}
 	b := &Config{Project: "p", Location: "l", DryRun: true}
 
-	hashA, _ := hashPlanConfig(a, resolved)
-	hashB, _ := hashPlanConfig(b, resolved)
+	hashA, _ := hashPlanConfig(a, resolved, "")
+	hashB, _ := hashPlanConfig(b, resolved, "")
 	if hashA != hashB {
 		t.Error("dry_run is not deployed state and must not affect the config hash")
 	}

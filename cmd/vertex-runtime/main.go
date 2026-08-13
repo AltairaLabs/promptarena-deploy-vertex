@@ -48,6 +48,16 @@ func run(ctx context.Context, log *slog.Logger) error {
 		return fmt.Errorf("provider bindings: %w", err)
 	}
 
+	shutdownTracing, traceOpts := setupTracing(cfg, log)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if shutdownErr := shutdownTracing(shutdownCtx); shutdownErr != nil {
+			log.Error("tracing shutdown", "error", shutdownErr)
+		}
+	}()
+	opts = append(opts, traceOpts...)
+
 	log.Info("runtime configured",
 		"agent", agentName,
 		"pack", packFile,
@@ -55,9 +65,17 @@ func run(ctx context.Context, log *slog.Logger) error {
 		"location", cfg.Location,
 		"provider_options", len(opts))
 
+	specs, err := parseToolSpecs(cfg.ToolSpecsJSON)
+	if err != nil {
+		return fmt.Errorf("tool specs: %w", err)
+	}
+	if len(specs) > 0 {
+		log.Info("tool executors configured", "count", len(specs))
+	}
+
 	mux := buildMux(
-		newTurnFunc(packFile, agentName, opts),
-		newStreamFunc(packFile, agentName, opts),
+		newTurnFunc(packFile, agentName, opts, specs),
+		newStreamFunc(packFile, agentName, opts, specs),
 	)
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 

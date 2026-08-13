@@ -56,6 +56,20 @@ const configSchema = `{
       "additionalProperties": { "type": "string" },
       "description": "Labels applied to created resources; sanitized to GCP label rules"
     },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "tracing_enabled": {
+          "type": "boolean",
+          "description": "Emit OTel traces, including eval scores, from the deployed engine"
+        },
+        "otlp_endpoint": {
+          "type": "string",
+          "description": "OTLP collector endpoint; required when tracing_enabled is true"
+        }
+      },
+      "additionalProperties": false
+    },
     "pack_inline_limit_bytes": {
       "type": "integer",
       "minimum": 1,

@@ -47,7 +47,12 @@ func gatherApplyInput(req *deploy.PlanRequest) (*engineInput, []AgentInfo, *Stat
 		return nil, nil, nil, fmt.Errorf("provider bindings: %v", resolveErrs)
 	}
 
-	configHash, err := hashPlanConfig(cfg, resolved)
+	toolSpecs, err := encodeToolSpecs(arena)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	configHash, err := hashPlanConfig(cfg, resolved, toolSpecs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -76,6 +81,8 @@ func gatherApplyInput(req *deploy.PlanRequest) (*engineInput, []AgentInfo, *Stat
 		Bindings:   resolved,
 		Delivery:   decidePackDelivery(req.PackJSON, cfg),
 		AgentCards: cards,
+
+		ToolSpecsJSON: toolSpecs,
 	}, agents, prior, nil
 }
 

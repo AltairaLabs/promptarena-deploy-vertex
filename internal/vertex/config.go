@@ -24,6 +24,17 @@ const DefaultPackInlineLimitBytes = 24576
 // gcsScheme prefixes a Cloud Storage URI.
 const gcsScheme = "gs://"
 
+// Observability configures what the deployed engine reports.
+//
+// Tracing is off by default: an unconfigured deployment should pay nothing and
+// send nothing. When on, the runtime emits spans for pipeline, provider and
+// tool events, and records eval scores as gen_ai.evaluation.score — scores that
+// every turn already computes and otherwise discards.
+type Observability struct {
+	TracingEnabled bool   `json:"tracing_enabled,omitempty"`
+	OTLPEndpoint   string `json:"otlp_endpoint,omitempty"`
+}
+
 // ResourceLimits carries the Agent Runtime CPU and memory request.
 type ResourceLimits struct {
 	CPU    string `json:"cpu,omitempty"`
@@ -51,7 +62,8 @@ type Config struct {
 	PackInlineLimitBytes int               `json:"pack_inline_limit_bytes,omitempty"`
 	DryRun               bool              `json:"dry_run,omitempty"`
 
-	Providers []ProviderBinding `json:"providers,omitempty"`
+	Providers     []ProviderBinding `json:"providers,omitempty"`
+	Observability *Observability    `json:"observability,omitempty"`
 }
 
 // parseConfig unmarshals the provider config JSON and applies defaults.
@@ -93,9 +105,38 @@ func (c *Config) validateStructure() []string {
 			"staging_bucket %q must start with %s", c.StagingBucket, gcsScheme))
 	}
 
+	errs = append(errs, c.validateObservability()...)
 	errs = append(errs, c.validateScaling()...)
 
 	return errs
+}
+
+// validateObservability checks that tracing has somewhere to send spans.
+// Enabling it without an endpoint would deploy silently untraced, which is
+// worse than refusing the config.
+func (c *Config) validateObservability() []string {
+	if c.Observability == nil {
+		return nil
+	}
+	if c.Observability.TracingEnabled && c.Observability.OTLPEndpoint == "" {
+		return []string{
+			"observability.otlp_endpoint is required when observability.tracing_enabled is true",
+		}
+	}
+
+	// The exporter builds its target with otlptracehttp.WithEndpointURL, which
+	// needs a full URL. A host:port value yields "http:///v1/traces" — no host —
+	// and every export fails at runtime while the deployment looks healthy.
+	if c.Observability.OTLPEndpoint != "" &&
+		!strings.HasPrefix(c.Observability.OTLPEndpoint, "http://") &&
+		!strings.HasPrefix(c.Observability.OTLPEndpoint, "https://") {
+		return []string{fmt.Sprintf(
+			"observability.otlp_endpoint %q must be a full URL including scheme "+
+				"(for example http://collector:4318), not host:port",
+			c.Observability.OTLPEndpoint)}
+	}
+
+	return nil
 }
 
 // validateImageMode checks image_mode and the fields it requires.

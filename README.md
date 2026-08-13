@@ -18,6 +18,26 @@ why this adapter is named `vertex`.
 | `promptarena-deploy-vertex` | JSON-RPC deploy adapter plugin |
 | `vertex-runtime` | Container entrypoint serving the Agent Runtime HTTP contract |
 
+## Releasing
+
+Pushing a `v*` tag runs GoReleaser, which builds the adapter for
+linux/darwin × amd64/arm64 and opens a **draft** release. The assets are bare
+binaries named `promptarena-deploy-vertex_<goos>_<goarch>`, which is exactly
+what `promptarena deploy adapter install vertex` downloads — the installer
+builds that name from `runtime.GOOS` and `runtime.GOARCH`, so archives or
+title-cased names would not resolve.
+
+Publishing the draft fires `publish-runtime.yml`, which pushes the runtime
+container image to `ghcr.io/altairalabs/promptkit-vertex-runtime` at the same
+tag. That ordering is deliberate: the image is only published once you have
+accepted the release.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+# review the draft release, then publish it to trigger the image build
+```
+
 ## Adapter configuration
 
 ```yaml

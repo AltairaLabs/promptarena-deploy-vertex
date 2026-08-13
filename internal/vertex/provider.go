@@ -27,7 +27,7 @@ func (p *Provider) GetProviderInfo(_ context.Context) (*deploy.ProviderInfo, err
 	return &deploy.ProviderInfo{
 		Name:         ProviderName,
 		Version:      Version,
-		Capabilities: []string{"validate"},
+		Capabilities: []string{"validate", "plan"},
 		ConfigSchema: configSchema,
 	}, nil
 }
@@ -61,8 +61,9 @@ func (p *Provider) ValidateConfig(
 	}, nil
 }
 
-// Plan reports the resource changes a deploy would make. Diffing lands in a
-// later task; this validates the inputs it will need.
+// Plan reports the resource changes a deploy would make, without mutating
+// anything and without contacting GCP: the diff is computed from the pack and
+// config hashes against prior adapter state.
 func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.PlanResponse, error) {
 	cfg, err := parseConfig(req.DeployConfig)
 	if err != nil {
@@ -71,7 +72,8 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 	if errs := cfg.validateStructure(); len(errs) != 0 {
 		return nil, fmt.Errorf("invalid deploy config: %s", strings.Join(errs, "; "))
 	}
-	if _, stateErr := parseState(req.PriorState); stateErr != nil {
+	prior, stateErr := parseState(req.PriorState)
+	if stateErr != nil {
 		return nil, stateErr
 	}
 
@@ -95,17 +97,15 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 	if err != nil {
 		return nil, err
 	}
-	id, err := packID(req.PackJSON)
-	if err != nil {
-		return nil, err
-	}
-	_, _ = agents, id
-	_ = decidePackDelivery(req.PackJSON, cfg)
-	_ = hasA2ATools(req.PackJSON)
-	_ = configHash
-	_ = hashPack(req.PackJSON)
 
-	return nil, fmt.Errorf("plan: %w", ErrNotImplemented)
+	return buildPlan(&planInput{
+		Agents:      agents,
+		Prior:       prior,
+		PackHash:    hashPack(req.PackJSON),
+		ConfigHash:  configHash,
+		Delivery:    decidePackDelivery(req.PackJSON, cfg),
+		HasA2ATools: hasA2ATools(req.PackJSON),
+	}), nil
 }
 
 // Apply is implemented in Phase 1b-ii.

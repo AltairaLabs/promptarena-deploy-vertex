@@ -65,9 +65,17 @@ func run(ctx context.Context, log *slog.Logger) error {
 		"location", cfg.Location,
 		"provider_options", len(opts))
 
+	specs, err := parseToolSpecs(cfg.ToolSpecsJSON)
+	if err != nil {
+		return fmt.Errorf("tool specs: %w", err)
+	}
+	if len(specs) > 0 {
+		log.Info("tool executors configured", "count", len(specs))
+	}
+
 	mux := buildMux(
-		newTurnFunc(packFile, agentName, opts),
-		newStreamFunc(packFile, agentName, opts),
+		newTurnFunc(packFile, agentName, opts, specs),
+		newStreamFunc(packFile, agentName, opts, specs),
 	)
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 

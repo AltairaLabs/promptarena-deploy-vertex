@@ -25,7 +25,7 @@ func mockOpts() []sdk.Option {
 }
 
 func TestNewTurnFunc_ReturnsText(t *testing.T) {
-	turn := newTurnFunc(testPackFile, testAgentName, mockOpts())
+	turn := newTurnFunc(testPackFile, testAgentName, mockOpts(), nil)
 
 	got, err := turn(context.Background(), classMethodQuery,
 		map[string]any{"message": "hello"})
@@ -43,7 +43,7 @@ func TestNewTurnFunc_ReturnsText(t *testing.T) {
 }
 
 func TestNewTurnFunc_MissingMessage(t *testing.T) {
-	turn := newTurnFunc(testPackFile, testAgentName, mockOpts())
+	turn := newTurnFunc(testPackFile, testAgentName, mockOpts(), nil)
 
 	if _, err := turn(context.Background(), classMethodQuery, map[string]any{}); err == nil {
 		t.Fatal("expected an error when no message field is present")
@@ -51,7 +51,7 @@ func TestNewTurnFunc_MissingMessage(t *testing.T) {
 }
 
 func TestNewTurnFunc_BadPackPath(t *testing.T) {
-	turn := newTurnFunc("testdata/does-not-exist.pack.json", testAgentName, mockOpts())
+	turn := newTurnFunc("testdata/does-not-exist.pack.json", testAgentName, mockOpts(), nil)
 
 	_, err := turn(context.Background(), classMethodQuery,
 		map[string]any{"message": "hello"})
@@ -64,7 +64,7 @@ func TestNewTurnFunc_BadPackPath(t *testing.T) {
 }
 
 func TestNewStreamFunc_StreamsText(t *testing.T) {
-	stream := newStreamFunc(testPackFile, testAgentName, mockOpts())
+	stream := newStreamFunc(testPackFile, testAgentName, mockOpts(), nil)
 
 	chunks, errs := stream(context.Background(), classMethodStreamQuery,
 		map[string]any{"message": "hello"})
@@ -86,7 +86,7 @@ func TestNewStreamFunc_StreamsText(t *testing.T) {
 }
 
 func TestNewStreamFunc_MissingMessage(t *testing.T) {
-	stream := newStreamFunc(testPackFile, testAgentName, mockOpts())
+	stream := newStreamFunc(testPackFile, testAgentName, mockOpts(), nil)
 
 	chunks, errs := stream(context.Background(), classMethodStreamQuery, map[string]any{})
 
@@ -98,7 +98,7 @@ func TestNewStreamFunc_MissingMessage(t *testing.T) {
 }
 
 func TestNewStreamFunc_BadPackPath(t *testing.T) {
-	stream := newStreamFunc("testdata/does-not-exist.pack.json", testAgentName, mockOpts())
+	stream := newStreamFunc("testdata/does-not-exist.pack.json", testAgentName, mockOpts(), nil)
 
 	chunks, errs := stream(context.Background(), classMethodStreamQuery,
 		map[string]any{"message": "hello"})
@@ -115,7 +115,7 @@ func TestNewStreamFunc_BadPackPath(t *testing.T) {
 }
 
 func TestNewStreamFunc_CanceledContext(t *testing.T) {
-	stream := newStreamFunc(testPackFile, testAgentName, mockOpts())
+	stream := newStreamFunc(testPackFile, testAgentName, mockOpts(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -23,8 +23,8 @@ func contractServer(t *testing.T, packFile, agentName string) string {
 	t.Helper()
 
 	mux := buildMux(
-		newTurnFunc(packFile, agentName, mockOpts()),
-		newStreamFunc(packFile, agentName, mockOpts()),
+		newTurnFunc(packFile, agentName, mockOpts(), nil),
+		newStreamFunc(packFile, agentName, mockOpts(), nil),
 	)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -215,5 +215,47 @@ func TestContract_EvalPackLoadsAndAnswers(t *testing.T) {
 	}
 	if got.Output == "" {
 		t.Error("expected a non-empty output from the mock provider")
+	}
+}
+
+// Registering executors builds a different pipeline than a pack with no tools.
+// This asserts the tool-bearing, executor-registered path still serves the
+// contract; whether a model calls the tool is a deployed-engine question.
+func TestContract_ToolExecutorRegistrationDoesNotBreakTheTurn(t *testing.T) {
+	specs := map[string]toolSpec{
+		"lookup_order": {Name: "lookup_order", Mode: "mock", MockResult: "Order 42: shipped"},
+	}
+
+	mux := buildMux(
+		newTurnFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
+		newStreamFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
+	)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	status, body := postContract(t, srv.URL+routeUnary,
+		`{"class_method":"query","input":{"message":"where is order 42?"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+}
+
+// An unsupported mode must not break the turn, but must be reported.
+func TestContract_UnsupportedToolModeStillServes(t *testing.T) {
+	specs := map[string]toolSpec{
+		"run_script": {Name: "run_script", Mode: "exec"},
+	}
+
+	mux := buildMux(
+		newTurnFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
+		newStreamFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
+	)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	status, body := postContract(t, srv.URL+routeUnary,
+		`{"class_method":"query","input":{"message":"hello"}}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
 	}
 }

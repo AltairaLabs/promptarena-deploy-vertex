@@ -24,7 +24,7 @@ const (
 
 	// envToolSpecs carries execution config for the pack's tools. The compiled
 	// pack has only their schemas, so without this a tool call has nothing to
-	// fulfil it and the model apologises instead of answering.
+	// fulfill it and the model apologizes instead of answering.
 	envToolSpecs = "PROMPTPACK_TOOL_SPECS"
 )
 

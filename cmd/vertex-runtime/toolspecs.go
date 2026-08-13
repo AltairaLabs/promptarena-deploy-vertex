@@ -63,8 +63,14 @@ func mockHandler(spec toolSpec) sdk.ToolHandler {
 }
 
 // renderMockTemplate renders a mock_template against the call arguments.
+//
+// The rendering and result handling deliberately mirror PromptKit's own
+// MockScriptedExecutor: missing keys render as the zero value, and the rendered
+// text is parsed back as JSON, falling back to {"result": <text>} when it is not
+// valid JSON. A deployed agent that answered differently from `promptarena run`
+// would make local evals meaningless.
 func renderMockTemplate(spec toolSpec, args map[string]any) (any, error) {
-	tmpl, err := template.New(spec.Name).Parse(spec.MockTemplate)
+	tmpl, err := template.New(spec.Name).Option("missingkey=zero").Parse(spec.MockTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("tool %q: parse mock_template: %w", spec.Name, err)
 	}
@@ -73,7 +79,12 @@ func renderMockTemplate(spec toolSpec, args map[string]any) (any, error) {
 	if execErr := tmpl.Execute(&out, args); execErr != nil {
 		return nil, fmt.Errorf("tool %q: render mock_template: %w", spec.Name, execErr)
 	}
-	return out.String(), nil
+
+	var parsed any
+	if json.Unmarshal([]byte(out.String()), &parsed) != nil {
+		return map[string]any{"result": out.String()}, nil
+	}
+	return parsed, nil
 }
 
 // registerToolExecutors attaches an executor to the conversation for every tool

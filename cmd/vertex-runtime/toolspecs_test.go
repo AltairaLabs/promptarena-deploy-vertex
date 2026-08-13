@@ -67,12 +67,35 @@ func TestMockHandler_TemplateRendersArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	rendered, ok := got.(string)
+
+	// PromptKit parses a rendered template back as JSON, so a template that
+	// renders an object must reach the model as an object — not as a quoted
+	// string, which reads to the model as a different tool result entirely.
+	rendered, ok := got.(map[string]any)
 	if !ok {
-		t.Fatalf("got %T, want string", got)
+		t.Fatalf("got %T (%v), want map[string]any", got, got)
 	}
-	if !strings.Contains(rendered, `"order":"42"`) {
-		t.Errorf("template did not interpolate args: %s", rendered)
+	if rendered["order"] != "42" {
+		t.Errorf("template did not interpolate args: %v", rendered)
+	}
+}
+
+func TestMockHandler_TemplateNonJSONWrapsAsResult(t *testing.T) {
+	handler := mockHandler(toolSpec{
+		Name:         "lookup_order",
+		MockTemplate: `Order {{.order_id}} has shipped`,
+	})
+
+	got, err := handler(map[string]any{"order_id": "42"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	rendered, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("got %T (%v), want map[string]any", got, got)
+	}
+	if rendered["result"] != "Order 42 has shipped" {
+		t.Errorf(`non-JSON output must be wrapped as {"result": ...}; got %v`, rendered)
 	}
 }
 

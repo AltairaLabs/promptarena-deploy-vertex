@@ -11,9 +11,9 @@ spec, or the client.
 ## Running
 
 ```bash
-export VERTEX_TEST_PROJECT=vertex-chaholl-001
+export VERTEX_TEST_PROJECT=my-project
 export VERTEX_TEST_LOCATION=us-central1
-export VERTEX_TEST_IMAGE=us-central1-docker.pkg.dev/vertex-chaholl-001/promptkit/vertex-runtime:test
+export VERTEX_TEST_IMAGE=us-central1-docker.pkg.dev/my-project/promptkit/vertex-runtime:test
 make test-integration
 ```
 

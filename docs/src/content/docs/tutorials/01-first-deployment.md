@@ -19,17 +19,10 @@ exists, reports no config error, and never starts.
   gcloud auth application-default login
   gcloud config set project my-project
   ```
-- The adapter installed. There is no published release yet, so build it from
-  source and drop the binary where the CLI looks for it:
+- The adapter installed:
   ```bash
-  git clone https://github.com/AltairaLabs/promptarena-deploy-vertex
-  cd promptarena-deploy-vertex && make build-adapter
-  mkdir -p ~/.promptarena/adapters
-  cp promptarena-deploy-vertex ~/.promptarena/adapters/
-  chmod 755 ~/.promptarena/adapters/promptarena-deploy-vertex
+  promptarena deploy adapter install vertex
   ```
-  Once the adapter is released, `promptarena deploy adapter install vertex` will
-  do this for you.
 
 :::caution[ADC is not the same as the `gcloud` CLI account]
 Terraform and the Google SDKs read Application Default Credentials, which drift

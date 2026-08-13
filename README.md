@@ -45,9 +45,42 @@ rejected rather than silently merged.
 
 ### Adapter status
 
-`get_provider_info` and `validate_config` are implemented. `plan`, `apply`,
-`destroy`, `status` and `import` return a not-implemented error until the next
-phase.
+| Method | Status |
+|---|---|
+| `get_provider_info` | Implemented |
+| `validate_config` | Implemented |
+| `plan` | Implemented |
+| `apply` | Not implemented |
+| `destroy` | Not implemented |
+| `status` | Not implemented |
+| `import` | Not implemented |
+
+`plan` performs no GCP calls: it diffs the pack and config hashes against prior
+adapter state and reports the resource changes a deploy would make.
+
+### How plan decides
+
+Three inputs drive the diff:
+
+| Input | Effect |
+|---|---|
+| Pack hash | Any pack change updates every engine |
+| Config hash | Project, location, image, service account, scaling, labels and resolved provider bindings |
+| Prior state | Engines absent from state are created; engines whose agent left the pack are deleted |
+
+An engine whose previous creation did not finish is recorded as in-flight and is
+reconciled on the next apply rather than orphaned.
+
+`dry_run` deliberately does **not** affect the config hash — it changes adapter
+behavior, not deployed state.
+
+Packs above `pack_inline_limit_bytes` (24576 by default) are delivered through
+Cloud Storage instead of an environment variable, which appears in the plan as a
+`pack_object` resource.
+
+`plan` warns, without failing, when a pack declares `a2a__` tools (agent-to-agent
+calls are not wired yet) or when a multi-agent pack will deploy as independent
+engines with no routing between them.
 
 ## Runtime contract
 

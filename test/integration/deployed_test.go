@@ -79,6 +79,24 @@ const featurePack = `{
   }
 }`
 
+// mockOrderStatus is the value only the tool knows. The model cannot produce it
+// from the prompt, so seeing it in the answer proves the runtime ran the tool
+// rather than improvised an order status.
+const mockOrderStatus = "delivered to a purple locker in Reykjavik"
+
+// featureArena is the arena config the CLI would hand the adapter. The compiled
+// pack carries only the tool's schema; its execution config lives here.
+const featureArena = `{
+  "tool_specs": {
+    "lookup_order": {
+      "name": "lookup_order",
+      "mode": "mock",
+      "mock_template": "{\"order_id\":\"{{.order_id}}\",\"status\":\"` +
+	mockOrderStatus + `\"}"
+    }
+  }
+}`
+
 // testEnv holds the resolved configuration for a run.
 type testEnv struct {
 	Project  string
@@ -132,6 +150,7 @@ func deployedEngine(t *testing.T, env testEnv) string {
 	req := &deploy.PlanRequest{
 		PackJSON:     featurePack,
 		DeployConfig: deployConfig(t, env),
+		ArenaConfig:  featureArena,
 	}
 
 	state, err := provider.Apply(context.Background(), req, nil)
@@ -323,9 +342,10 @@ func TestDeployed_ReapplyIsIdempotent(t *testing.T) {
 // directive to make the model's choice as reliable as a model's choice gets;
 // a failure here is worth investigating rather than retrying blindly.
 //
-// Note what this can and cannot show. The pack's tool declares parameters but
-// no executor, so nothing fulfils the call — this proves the model reached the
-// tool, not that the runtime ran it.
+// The assertion is the tool's mock status string, which appears nowhere in the
+// prompt or the pack. Only a turn that called the tool AND received its result
+// can produce it, so this covers the whole path: arena tool_specs → adapter →
+// container env → executor registration → tool call → answer.
 func TestDeployed_ToolCalling(t *testing.T) {
 	env := requireEnv(t)
 	name := deployedEngine(t, env)
@@ -350,29 +370,13 @@ func TestDeployed_ToolCalling(t *testing.T) {
 		t.Fatalf("unmarshal %q: %v", body, unmarshalErr)
 	}
 	if got.Output == "" {
-		t.Error("empty output — a tool-calling turn should still produce a response")
+		t.Fatal("empty output — a tool-calling turn should still produce a response")
 	}
 
-	// The model reaches the tool and the runtime cannot fulfil the call, so it
-	// answers with an apology instead of the order details. Asserting only
-	// "non-empty output" would pass on exactly that failure, which is how this
-	// gap went unnoticed. Until vertex-runtime registers tool executors, assert
-	// the known-bad shape so the test fails loudly when it is fixed — at which
-	// point this check should be inverted to assert the order details.
-	//
-	// Tracked in issue #7.
-	lowered := strings.ToLower(got.Output)
-	brokenToolPhrases := []string{"not working", "unable", "cannot", "sorry"}
-
-	looksBroken := false
-	for _, phrase := range brokenToolPhrases {
-		if strings.Contains(lowered, phrase) {
-			looksBroken = true
-			break
-		}
-	}
-	if !looksBroken {
-		t.Errorf("tool execution appears to work now: %q — invert this assertion "+
-			"to check the order details and close issue #7", got.Output)
+	// Match on a distinctive fragment rather than the whole string: the model
+	// paraphrases, but it cannot invent "purple locker".
+	if !strings.Contains(strings.ToLower(got.Output), "purple locker") {
+		t.Errorf("answer does not carry the tool's result: %q\n"+
+			"want the mock status %q to reach the model", got.Output, mockOrderStatus)
 	}
 }

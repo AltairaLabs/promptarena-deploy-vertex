@@ -229,10 +229,38 @@ turn fails after streaming has begun, the failure arrives as a trailing
 | `PROMPTPACK_PACK_URI` | `gs://bucket/object` pack location, used when the pack is too large to inline |
 | `PROMPTPACK_AGENT` | Which agent to serve; defaults to `agents.entry` or the pack's single prompt |
 | `PROMPTPACK_PROVIDERS` | JSON list of resolved provider bindings |
+| `PROMPTPACK_TOOL_SPECS` | JSON map of tool name to execution config; absent when the arena declares no tools |
 | `GOOGLE_CLOUD_PROJECT` | GCP project for Vertex model routing |
 | `GOOGLE_CLOUD_LOCATION` | GCP region for Vertex model routing |
 
 One of `PROMPTPACK_PACK_JSON` or `PROMPTPACK_PACK_URI` is required.
+
+### Tools
+
+A compiled pack carries a tool's *schema* — name, description, parameters — but
+not how to run it. Execution config lives in the arena config under `tool_specs`,
+which the CLI passes to the adapter, and which the adapter forwards to the engine
+as `PROMPTPACK_TOOL_SPECS`. **Without an arena config, a deployed agent advertises
+its tools to the model and then has nothing to fulfill the calls** — the model
+apologizes instead of answering.
+
+Supported modes:
+
+| Mode | Support |
+|---|---|
+| `mock` | Full. `mock_result` and `mock_template`, with the same semantics as `promptarena run`: a rendered template is parsed back as JSON, falling back to `{"result": "<text>"}`. |
+| `live` | HTTP `url` and `method` only. Headers, timeouts and request/response mapping are not forwarded yet. |
+| `mcp`, `exec`, `client` | Not supported. Each needs a resource the container does not have — an MCP server, a subprocess, or a client on the other end of the connection. |
+
+Tools in an unsupported mode are logged once at startup and left unregistered,
+rather than failing the deployment: the rest of the agent still works.
+
+Changing a tool spec changes the plan's config hash, so editing a `mock_result`
+shows up as an update rather than silently leaving the old value deployed.
+
+Verified against a deployed engine: with a `mock_template` returning a status
+string that appears nowhere in the prompt, `gemini-2.5-flash` calls the tool and
+answers with the tool's value (`test/integration/deployed_test.go`).
 
 ### Provider bindings
 

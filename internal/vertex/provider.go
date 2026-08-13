@@ -6,6 +6,7 @@ package vertex
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/AltairaLabs/PromptKit/runtime/deploy"
 )
@@ -60,8 +61,19 @@ func (p *Provider) ValidateConfig(
 	}, nil
 }
 
-// Plan is implemented in Phase 1b-ii.
-func (p *Provider) Plan(_ context.Context, _ *deploy.PlanRequest) (*deploy.PlanResponse, error) {
+// Plan reports the resource changes a deploy would make. Diffing lands in a
+// later task; this validates the inputs it will need.
+func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.PlanResponse, error) {
+	cfg, err := parseConfig(req.DeployConfig)
+	if err != nil {
+		return nil, err
+	}
+	if errs := cfg.validateStructure(); len(errs) != 0 {
+		return nil, fmt.Errorf("invalid deploy config: %s", strings.Join(errs, "; "))
+	}
+	if _, err := parseState(req.PriorState); err != nil {
+		return nil, err
+	}
 	return nil, fmt.Errorf("plan: %w", ErrNotImplemented)
 }
 

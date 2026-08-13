@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/AltairaLabs/PromptKit/runtime/deploy"
+	"github.com/AltairaLabs/PromptKit/runtime/deploy/adaptersdk"
 )
 
 // ProviderName is the provider id used in arena config and the binary name.
@@ -27,7 +28,7 @@ func (p *Provider) GetProviderInfo(_ context.Context) (*deploy.ProviderInfo, err
 	return &deploy.ProviderInfo{
 		Name:         ProviderName,
 		Version:      Version,
-		Capabilities: []string{"validate", "plan"},
+		Capabilities: []string{"validate", "plan", "apply"},
 		ConfigSchema: configSchema,
 	}, nil
 }
@@ -108,11 +109,34 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 	}), nil
 }
 
-// Apply is implemented in Phase 1b-ii.
+// Apply creates or updates the Agent Runtime engines for the pack and returns
+// the state to persist. State is returned even on partial failure so that
+// engines already created are not orphaned.
 func (p *Provider) Apply(
-	_ context.Context, _ *deploy.PlanRequest, _ deploy.ApplyCallback,
+	ctx context.Context, req *deploy.PlanRequest, callback deploy.ApplyCallback,
 ) (string, error) {
-	return "", fmt.Errorf("apply: %w", ErrNotImplemented)
+	in, agents, prior, err := gatherApplyInput(req)
+	if err != nil {
+		return "", err
+	}
+
+	client, err := newClient(ctx, in.Cfg)
+	if err != nil {
+		return "", err
+	}
+
+	var report *adaptersdk.ProgressReporter
+	if callback != nil {
+		report = adaptersdk.NewProgressReporter(callback)
+	}
+
+	next, applyErr := applyEngines(ctx, client, in, agents, prior, report)
+
+	state, marshalErr := next.Marshal()
+	if marshalErr != nil {
+		return "", marshalErr
+	}
+	return state, applyErr
 }
 
 // Destroy is implemented in Phase 1b-ii.

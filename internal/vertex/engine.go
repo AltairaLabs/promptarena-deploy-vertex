@@ -32,7 +32,7 @@ type engineInput struct {
 
 // buildEngine turns the deployment inputs into the desired spec for one agent.
 // It is pure: no I/O, so the whole mapping is testable offline.
-func buildEngine(in *engineInput, agent AgentInfo) (*EngineSpec, []string) {
+func buildEngine(in *engineInput, agent AgentInfo) (built *EngineSpec, errors []string) {
 	env, errs := buildEngineEnv(in, agent.Name)
 	if len(errs) != 0 {
 		return nil, errs
@@ -61,7 +61,7 @@ func buildEngine(in *engineInput, agent AgentInfo) (*EngineSpec, []string) {
 }
 
 // buildEngineEnv assembles the runtime's environment.
-func buildEngineEnv(in *engineInput, agentName string) (map[string]string, []string) {
+func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, errors []string) {
 	encodedBindings, err := json.Marshal(in.Bindings)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("encode provider bindings: %v", err)}

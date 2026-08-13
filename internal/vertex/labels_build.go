@@ -5,7 +5,7 @@ const managedLabelCount = 3
 
 // buildLabels merges sanitized user labels with the managed labels. Managed
 // labels always win, so a user cannot break state recovery by overriding them.
-func buildLabels(cfg *Config, packID, agentName string) (map[string]string, []string) {
+func buildLabels(cfg *Config, packID, agentName string) (built map[string]string, errors []string) {
 	if errs := validateLabels(cfg.Labels); len(errs) != 0 {
 		return nil, errs
 	}

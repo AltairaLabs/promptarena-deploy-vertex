@@ -1,5 +1,10 @@
 # promptarena-deploy-vertex
 
+[![CI](https://github.com/AltairaLabs/promptarena-deploy-vertex/workflows/CI/badge.svg)](https://github.com/AltairaLabs/promptarena-deploy-vertex/actions/workflows/ci.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=AltairaLabs_promptarena-deploy-vertex&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=AltairaLabs_promptarena-deploy-vertex)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=AltairaLabs_promptarena-deploy-vertex&metric=coverage)](https://sonarcloud.io/summary/new_code?id=AltairaLabs_promptarena-deploy-vertex)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Google Agent Runtime deploy adapter for [PromptKit](https://github.com/AltairaLabs/PromptKit).
 
 Agent Runtime was formerly Vertex AI Agent Engine. The API resource is still

@@ -70,8 +70,45 @@ jobs:
     - name: Build runtime image
       run: docker build -t promptkit-vertex-runtime:ci .
 
-# The SonarCloud job is intentionally absent until the SonarCloud project
-# AltairaLabs_promptarena-deploy-vertex exists and SONAR_TOKEN is set as a repo
-# secret. sonar-project.properties is already in place; adding the job before
-# the project exists would fail CI on every push. Mirror the `sonar` job from
-# promptarena-deploy-omnia/.github/workflows/ci.yml once both are configured.
+  sonar:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: test
+    if: github.actor != 'dependabot[bot]'
+
+    steps:
+    - name: Check for SONAR_TOKEN
+      id: guard
+      run: |
+        if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+          echo "SONAR_TOKEN is not set; skipping the SonarCloud scan." >&2
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Checkout code
+      if: steps.guard.outputs.enabled == 'true'
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        fetch-depth: 0
+
+    - name: Download coverage artifact
+      if: steps.guard.outputs.enabled == 'true'
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: coverage
+
+    - name: SonarCloud Scan
+      if: steps.guard.outputs.enabled == 'true'
+      uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
+      with:
+        # Block on the quality gate so this job fails (not silently passes)
+        # when coverage/quality regresses.
+        args: >
+          -Dsonar.qualitygate.wait=true
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

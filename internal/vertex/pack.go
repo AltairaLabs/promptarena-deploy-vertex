@@ -102,8 +102,17 @@ func agentNames(pack *packView) (names []string, entry string) {
 	return names, ""
 }
 
-// packID — reading the pack's id to seed the promptkit-pack label — lands with
-// Apply, its first caller. Plan does not label anything.
+// packID returns the pack's id, which seeds the promptkit-pack label.
+func packID(packJSON string) (string, error) {
+	pack, err := decodePack(packJSON)
+	if err != nil {
+		return "", err
+	}
+	if pack.ID == "" {
+		return "", fmt.Errorf("pack has no id")
+	}
+	return pack.ID, nil
+}
 
 // hasA2ATools reports whether the pack declares agent-to-agent tools. Those
 // calls cannot resolve until A2A wiring exists, so Plan warns about them.

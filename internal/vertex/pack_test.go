@@ -89,7 +89,27 @@ func TestEnumerateAgents_NoPrompts(t *testing.T) {
 	}
 }
 
-// packID tests land with the function itself, in the Apply phase.
+func TestPackID(t *testing.T) {
+	got, err := packID(`{"id":"my-pack"}`)
+	if err != nil {
+		t.Fatalf("packID: %v", err)
+	}
+	if got != "my-pack" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestPackID_Missing(t *testing.T) {
+	if _, err := packID(`{}`); err == nil {
+		t.Fatal("expected an error when the pack has no id")
+	}
+}
+
+func TestPackID_InvalidJSON(t *testing.T) {
+	if _, err := packID(`{not json`); err == nil {
+		t.Fatal("expected an error for malformed pack JSON")
+	}
+}
 
 func TestHasA2ATools(t *testing.T) {
 	with := `{"id":"p","tools":{"a2a__weather__forecast":{}}}`

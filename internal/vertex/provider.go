@@ -71,9 +71,22 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 	if errs := cfg.validateStructure(); len(errs) != 0 {
 		return nil, fmt.Errorf("invalid deploy config: %s", strings.Join(errs, "; "))
 	}
-	if _, err := parseState(req.PriorState); err != nil {
+	if _, stateErr := parseState(req.PriorState); stateErr != nil {
+		return nil, stateErr
+	}
+
+	arena, err := parseArenaConfig(req.ArenaConfig)
+	if err != nil {
 		return nil, err
 	}
+	resolved, resolveErrs := resolveBindings(cfg.Providers, arena)
+	if len(resolveErrs) != 0 {
+		return nil, fmt.Errorf("provider bindings: %s", strings.Join(resolveErrs, "; "))
+	}
+	if _, ok := primaryBinding(resolved); !ok {
+		return nil, fmt.Errorf("no provider binding with role %q; one is required", RoleLLM)
+	}
+
 	return nil, fmt.Errorf("plan: %w", ErrNotImplemented)
 }
 

@@ -315,3 +315,64 @@ func TestDeployed_ReapplyIsIdempotent(t *testing.T) {
 		t.Errorf("re-apply created a new engine %s, want in-place update of %s", second, first)
 	}
 }
+
+// TestDeployed_ToolCalling asks a real model to call the pack's tool.
+//
+// This is the only way to exercise tool calling honestly: the mock provider
+// cannot emit a tool call, so no offline test can prove it. The prompt is
+// directive to make the model's choice as reliable as a model's choice gets;
+// a failure here is worth investigating rather than retrying blindly.
+//
+// Note what this can and cannot show. The pack's tool declares parameters but
+// no executor, so nothing fulfils the call — this proves the model reached the
+// tool, not that the runtime ran it.
+func TestDeployed_ToolCalling(t *testing.T) {
+	env := requireEnv(t)
+	name := deployedEngine(t, env)
+
+	status, body, err := authedRequest(http.MethodPost,
+		engineURL(name, env.Location, "query"),
+		`{"class_method":"query","input":{"message":`+
+			`"Use the lookup_order tool to look up order 42, then tell me what it says."}}`)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", status, body)
+	}
+
+	t.Logf("tool-calling response: %s", body)
+
+	var got struct {
+		Output string `json:"output"`
+	}
+	if unmarshalErr := json.Unmarshal([]byte(body), &got); unmarshalErr != nil {
+		t.Fatalf("unmarshal %q: %v", body, unmarshalErr)
+	}
+	if got.Output == "" {
+		t.Error("empty output — a tool-calling turn should still produce a response")
+	}
+
+	// The model reaches the tool and the runtime cannot fulfil the call, so it
+	// answers with an apology instead of the order details. Asserting only
+	// "non-empty output" would pass on exactly that failure, which is how this
+	// gap went unnoticed. Until vertex-runtime registers tool executors, assert
+	// the known-bad shape so the test fails loudly when it is fixed — at which
+	// point this check should be inverted to assert the order details.
+	//
+	// Tracked in issue #7.
+	lowered := strings.ToLower(got.Output)
+	brokenToolPhrases := []string{"not working", "unable", "cannot", "sorry"}
+
+	looksBroken := false
+	for _, phrase := range brokenToolPhrases {
+		if strings.Contains(lowered, phrase) {
+			looksBroken = true
+			break
+		}
+	}
+	if !looksBroken {
+		t.Errorf("tool execution appears to work now: %q — invert this assertion "+
+			"to check the order details and close issue #7", got.Output)
+	}
+}

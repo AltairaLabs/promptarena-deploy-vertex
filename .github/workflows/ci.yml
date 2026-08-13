@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+  # No branches filter: stacked pull requests target another feature branch
+  # rather than main, and a `branches: [main]` filter silently skips them —
+  # leaving those PRs with no CI signal at all.
   pull_request:
-    branches: [main]
 
 jobs:
   test:

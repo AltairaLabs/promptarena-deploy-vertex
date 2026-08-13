@@ -13,7 +13,7 @@
       "id": "support",
       "name": "Support Agent",
       "version": "1.0.0",
-      "system_template": "You are a support agent for {{company}}. Be concise.",
+      "system_template": "You are a support agent. Be concise.",
       "tools": ["lookup_order"],
       "validators": [
         {

@@ -11,6 +11,7 @@ require (
 	google.golang.org/api v0.293.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (

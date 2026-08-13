@@ -207,3 +207,24 @@ func TestBuildEngine_TracingEnvInjected(t *testing.T) {
 		t.Errorf("%s = %q", envOTLPEndpoint, spec.Env[envOTLPEndpoint])
 	}
 }
+
+func TestBuildEngine_ToolSpecsAbsentByDefault(t *testing.T) {
+	spec, _ := buildEngine(testEngineInput(), AgentInfo{Name: "assistant"})
+
+	if _, ok := spec.Env[envToolSpecs]; ok {
+		t.Error("tool specs env must be absent when the arena declares no tools")
+	}
+}
+
+func TestBuildEngine_ToolSpecsInjected(t *testing.T) {
+	in := testEngineInput()
+	in.ToolSpecsJSON = `{"lookup_order":{"mode":"mock","mock_result":{"status":"shipped"}}}`
+
+	spec, errs := buildEngine(in, AgentInfo{Name: "assistant"})
+	if len(errs) != 0 {
+		t.Fatalf("buildEngine: %v", errs)
+	}
+	if spec.Env[envToolSpecs] != in.ToolSpecsJSON {
+		t.Errorf("%s = %q, want %q", envToolSpecs, spec.Env[envToolSpecs], in.ToolSpecsJSON)
+	}
+}

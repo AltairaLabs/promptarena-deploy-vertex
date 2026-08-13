@@ -39,11 +39,16 @@ type planConfigFingerprint struct {
 	ContainerConcurrency *int              `json:"container_concurrency"`
 	Labels               map[string]string `json:"labels"`
 	Bindings             []ResolvedBinding `json:"bindings"`
+	Observability        *Observability    `json:"observability"`
+	ToolSpecs            string            `json:"tool_specs"`
 }
 
-// hashPlanConfig hashes the deploy-affecting parts of the config plus the
-// resolved bindings.
-func hashPlanConfig(cfg *Config, resolved []ResolvedBinding) (string, error) {
+// hashPlanConfig hashes the deploy-affecting parts of the config, the resolved
+// bindings, and the tool specs. All three become container environment, so a
+// change to any of them must show up as a diff — otherwise editing a tool's
+// mock_result would leave the old value running with the plan reporting no
+// change.
+func hashPlanConfig(cfg *Config, resolved []ResolvedBinding, toolSpecs string) (string, error) {
 	fingerprint := planConfigFingerprint{
 		Project:              cfg.Project,
 		Location:             cfg.Location,
@@ -56,6 +61,8 @@ func hashPlanConfig(cfg *Config, resolved []ResolvedBinding) (string, error) {
 		ContainerConcurrency: cfg.ContainerConcurrency,
 		Labels:               cfg.Labels,
 		Bindings:             resolved,
+		Observability:        cfg.Observability,
+		ToolSpecs:            toolSpecs,
 	}
 
 	encoded, err := json.Marshal(fingerprint)

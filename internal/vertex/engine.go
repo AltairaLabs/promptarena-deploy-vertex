@@ -29,6 +29,7 @@ const (
 	// the runtime does not read is the silent failure this pairing prevents.
 	envTracingEnabled = "PROMPTPACK_TRACING_ENABLED"
 	envOTLPEndpoint   = "OTEL_EXPORTER_OTLP_ENDPOINT"
+	envToolSpecs      = "PROMPTPACK_TOOL_SPECS"
 )
 
 // engineInput is everything buildEngine needs, gathered once by Apply and
@@ -43,6 +44,7 @@ type engineInput struct {
 	Delivery      PackDelivery
 	StagedPackURI string
 	AgentCards    map[string]map[string]any
+	ToolSpecsJSON string
 }
 
 // buildEngine turns the deployment inputs into the desired spec for one agent.
@@ -87,6 +89,10 @@ func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, 
 		envProviders: string(encodedBindings),
 		envProject:   in.Cfg.Project,
 		envLocation:  in.Cfg.Location,
+	}
+
+	if in.ToolSpecsJSON != "" {
+		env[envToolSpecs] = in.ToolSpecsJSON
 	}
 
 	if in.Cfg.Observability != nil && in.Cfg.Observability.TracingEnabled {

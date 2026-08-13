@@ -90,7 +90,12 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 		return nil, fmt.Errorf("no provider binding with role %q; one is required", RoleLLM)
 	}
 
-	configHash, err := hashPlanConfig(cfg, resolved)
+	toolSpecs, err := encodeToolSpecs(arena)
+	if err != nil {
+		return nil, err
+	}
+
+	configHash, err := hashPlanConfig(cfg, resolved, toolSpecs)
 	if err != nil {
 		return nil, err
 	}

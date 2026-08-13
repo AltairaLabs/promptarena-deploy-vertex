@@ -11,6 +11,13 @@ import (
 type ArenaConfig struct {
 	LoadedProviders map[string]*ArenaProvider `json:"loaded_providers,omitempty"`
 	ProviderSpecs   map[string]*ArenaProvider `json:"provider_specs,omitempty"`
+
+	// ToolSpecs carries each tool's execution config as raw JSON. The compiled
+	// pack has only tool schemas, so without forwarding these a deployed engine
+	// receives tool calls it cannot fulfill. The runtime owns this schema; the
+	// adapter makes no decisions on its contents, so modeling it here would
+	// create a second definition to drift.
+	ToolSpecs map[string]json.RawMessage `json:"tool_specs,omitempty"`
 }
 
 // ArenaProvider is a provider definition from the arena config.
@@ -31,6 +38,19 @@ func parseArenaConfig(raw string) (*ArenaConfig, error) {
 		return nil, fmt.Errorf("invalid arena config JSON: %w", err)
 	}
 	return &cfg, nil
+}
+
+// encodeToolSpecs re-serializes the arena's tool specs for injection. Returns
+// an empty string when the arena declares none, so the env var stays unset.
+func encodeToolSpecs(a *ArenaConfig) (string, error) {
+	if a == nil || len(a.ToolSpecs) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(a.ToolSpecs)
+	if err != nil {
+		return "", fmt.Errorf("encode tool specs: %w", err)
+	}
+	return string(encoded), nil
 }
 
 // provider looks up a provider by id, preferring loaded providers over specs.

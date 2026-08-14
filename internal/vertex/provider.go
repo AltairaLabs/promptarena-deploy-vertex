@@ -16,11 +16,23 @@ import (
 const ProviderName = "vertex"
 
 // Provider implements deploy.Provider for Google Agent Runtime.
-type Provider struct{}
+type Provider struct {
+	// clientFunc builds the control-plane client. Tests substitute it; when
+	// nil the real newClient is used.
+	clientFunc func(ctx context.Context, cfg *Config) (gcpClient, error)
+}
 
 // NewProvider creates a Provider.
 func NewProvider() *Provider {
 	return &Provider{}
+}
+
+// newClient returns the control-plane client, honoring a test override.
+func (p *Provider) newClient(ctx context.Context, cfg *Config) (gcpClient, error) {
+	if p.clientFunc != nil {
+		return p.clientFunc(ctx, cfg)
+	}
+	return newClient(ctx, cfg)
 }
 
 // GetProviderInfo returns metadata about the vertex adapter.
@@ -63,9 +75,11 @@ func (p *Provider) ValidateConfig(
 }
 
 // Plan reports the resource changes a deploy would make, without mutating
-// anything and without contacting GCP: the diff is computed from the pack and
-// config hashes against prior adapter state.
-func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.PlanResponse, error) {
+// anything. The diff comes from the pack and config hashes against prior
+// adapter state, after that state has been verified against the live control
+// plane so drift is visible. Dry run skips verification and stays fully
+// offline.
+func (p *Provider) Plan(ctx context.Context, req *deploy.PlanRequest) (*deploy.PlanResponse, error) {
 	cfg, err := parseConfig(req.DeployConfig)
 	if err != nil {
 		return nil, err
@@ -104,6 +118,10 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 		return nil, err
 	}
 
+	// Verify stored state against the live control plane so the plan reflects
+	// reality rather than the last thing written down.
+	prior, drift := p.verifiedPriorState(ctx, cfg, prior)
+
 	return buildPlan(&planInput{
 		Agents:      agents,
 		Prior:       prior,
@@ -111,6 +129,7 @@ func (p *Provider) Plan(_ context.Context, req *deploy.PlanRequest) (*deploy.Pla
 		ConfigHash:  configHash,
 		Delivery:    decidePackDelivery(req.PackJSON, cfg),
 		HasA2ATools: hasA2ATools(req.PackJSON),
+		Drift:       drift,
 	}), nil
 }
 

@@ -27,6 +27,9 @@ type planInput struct {
 	ConfigHash  string
 	Delivery    PackDelivery
 	HasA2ATools bool
+	// Drift describes engines that were in prior state but no longer exist,
+	// as found by verifying against the live control plane.
+	Drift []string
 }
 
 // buildPlan diffs desired against prior state and returns the resource changes.
@@ -132,6 +135,10 @@ func engineChange(in *planInput, name string) deploy.ResourceChange {
 // not behave as the author expects.
 func planWarnings(in *planInput) []string {
 	var warnings []string
+
+	// Drift first: it explains why an engine the user believes is deployed is
+	// being created rather than updated.
+	warnings = append(warnings, in.Drift...)
 
 	if in.HasA2ATools {
 		warnings = append(warnings,

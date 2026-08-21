@@ -99,4 +99,4 @@ field to set.
 reach another agent — they will be advertised to the model and go unfulfilled,
 the same failure mode as a tool with no execution config.
 
-This is tracked as issue #3 in the adapter repository.
+Setting `spec.agentCard` so A2A discovery works is therefore not yet supported.

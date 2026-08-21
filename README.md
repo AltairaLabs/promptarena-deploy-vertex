@@ -47,7 +47,7 @@ git push origin v0.1.0
 ```yaml
 deploy:
   provider: vertex
-  vertex:
+  config:
     project: my-project
     location: us-central1
     image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-vertex-runtime
@@ -120,7 +120,8 @@ pays nothing. Enable it in the deploy config:
 
 ```yaml
 deploy:
-  vertex:
+  provider: vertex
+  config:
     observability:
       tracing_enabled: true
       otlp_endpoint: http://collector:4318

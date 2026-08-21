@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  # The family's other adapters link to GitHub Discussions, which is disabled on
+  # every one of these repos — those links 404. Point at things that exist.
+  - name: Adapter documentation
+    url: https://promptarena.altairalabs.ai/arena/how-to/deploy/vertex/configure/
+    about: Configuration reference, dry runs, tools and observability for this adapter.
+  - name: PromptArena issues
+    url: https://github.com/AltairaLabs/promptarena/issues
+    about: For questions about promptarena itself rather than the Vertex AI adapter.
+  - name: Security Issues
+    url: mailto:security@altairalabs.ai
+    about: Report security vulnerabilities privately via email. Do not open a public issue.

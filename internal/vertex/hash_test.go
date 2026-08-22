@@ -3,7 +3,8 @@ package vertex
 import "testing"
 
 func TestHashString_IsStable(t *testing.T) {
-	if hashString("abc") != hashString("abc") {
+	first, second := hashString("abc"), hashString("abc")
+	if first != second {
 		t.Error("hashString is not deterministic")
 	}
 	if hashString("abc") == hashString("abd") {

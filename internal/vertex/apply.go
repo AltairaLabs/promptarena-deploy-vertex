@@ -241,7 +241,7 @@ func statusFor(action deploy.Action) string {
 	case deploy.ActionUpdate:
 		return "updated"
 	case deploy.ActionDelete:
-		return "deleted"
+		return statusDeleted
 	case deploy.ActionNoChange, deploy.ActionDrift:
 		return statusUnchanged
 	default:

@@ -76,9 +76,14 @@ at deploy time.
 | Create | Yes | Yes |
 | Update | Yes, in place | Replaced |
 | Delete (agent left pack) | Yes | — |
-| `destroy` | Not implemented | Not implemented |
-| `status` | Not implemented | Not implemented |
+| `destroy` | Yes | Not implemented |
+| `status` | Yes | Not implemented |
 | `import` | Not implemented | Not implemented |
 
-Tearing down a whole deployment is currently manual — see
-[resource lifecycle](/explanation/resource-lifecycle/).
+`destroy` deletes the engines. It does **not** delete a pack staged to Cloud
+Storage: the object is small and harmless, but it is left behind, so a bucket
+used for many deploys accumulates them. Remove them with `gcloud storage rm` if
+that matters to you.
+
+`status` reports engine health only, for the same reason — a staged object has
+no health to report beyond existing.

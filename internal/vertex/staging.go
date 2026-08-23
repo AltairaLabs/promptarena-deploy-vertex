@@ -89,3 +89,18 @@ func inlineLimit(cfg *Config) int {
 	}
 	return DefaultPackInlineLimitBytes
 }
+
+// splitGCSURI splits a gs://bucket/object URI into its two halves. It mirrors
+// the runtime's own parseGCSURI, because the URI this writes is the URI the
+// runtime reads and the two must agree on the shape.
+func splitGCSURI(uri string) (bucket, object string, err error) {
+	rest, found := strings.CutPrefix(uri, gcsScheme)
+	if !found {
+		return "", "", fmt.Errorf("pack URI %q must start with %s", uri, gcsScheme)
+	}
+	bucket, object, found = strings.Cut(rest, "/")
+	if !found || bucket == "" || object == "" {
+		return "", "", fmt.Errorf("pack URI %q must be %sbucket/object", uri, gcsScheme)
+	}
+	return bucket, object, nil
+}

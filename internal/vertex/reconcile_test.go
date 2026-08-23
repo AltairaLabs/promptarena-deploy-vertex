@@ -6,7 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AltairaLabs/PromptKit/runtime/deploy"
+	"github.com/AltairaLabs/promptarena/deploy"
+	"github.com/AltairaLabs/promptarena/deploy/adaptersdk"
 )
 
 // recordingClient is a gcpClient that answers GetEngine from a fixed set and
@@ -81,17 +82,21 @@ func TestProviderPlan_DriftedEngineIsPlannedForCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if len(got.Changes) != 1 || got.Changes[0].Action != deploy.ActionCreate {
-		t.Fatalf("expected a single CREATE for the drifted engine, got %+v", got.Changes)
+	// Two changes: the DRIFT that explains what happened, and the CREATE that
+	// replaces it. Drift travels as a change so it is counted and rendered
+	// like everything else rather than as loose warning prose.
+	if len(got.Changes) != 2 {
+		t.Fatalf("expected a DRIFT and a CREATE for the drifted engine, got %+v", got.Changes)
 	}
-	var warned bool
-	for _, w := range got.Warnings {
-		if strings.Contains(w, "assistant") && strings.Contains(w, "no longer exists") {
-			warned = true
-		}
+	if got.Changes[0].Action != deploy.ActionDrift ||
+		!strings.Contains(got.Changes[0].Detail, "no longer exists") {
+		t.Errorf("expected a DRIFT change explaining the engine is gone, got %+v", got.Changes[0])
 	}
-	if !warned {
-		t.Errorf("expected a drift warning naming the engine, got %v", got.Warnings)
+	if got.Changes[0].Name != "assistant" {
+		t.Errorf("drift change should name the engine, got %q", got.Changes[0].Name)
+	}
+	if got.Changes[1].Action != deploy.ActionCreate {
+		t.Errorf("expected the drifted engine to be recreated, got %+v", got.Changes[1])
 	}
 	if len(client.gets) == 0 {
 		t.Error("Plan should have verified prior state against the control plane")
@@ -113,9 +118,9 @@ func TestProviderPlan_DryRunDoesNotVerify(t *testing.T) {
 	if len(client.gets) != 0 {
 		t.Errorf("dry run must not contact the control plane, but looked up %v", client.gets)
 	}
-	for _, w := range got.Warnings {
-		if strings.Contains(w, "no longer exists") {
-			t.Errorf("dry run must not report drift, got %q", w)
+	for _, c := range got.Changes {
+		if c.Action == deploy.ActionDrift {
+			t.Errorf("dry run must not report drift, got %+v", c)
 		}
 	}
 }
@@ -156,8 +161,14 @@ func TestReconcilePriorState_DropsEnginesThatNoLongerExist(t *testing.T) {
 	if _, ok := got.Engines["kept"]; !ok {
 		t.Error("an engine that still exists must be kept")
 	}
-	if len(drift) != 1 || !strings.Contains(drift[0], "gone") {
-		t.Errorf("expected drift naming the deleted engine, got %v", drift)
+	if len(drift) != 1 {
+		t.Fatalf("expected drift for exactly the deleted engine, got %+v", drift)
+	}
+	if drift[0].Name != "gone" || drift[0].Action != deploy.ActionDrift {
+		t.Errorf("expected a DRIFT change naming %q, got %+v", "gone", drift[0])
+	}
+	if drift[0].Type != ResTypeAgentRuntime {
+		t.Errorf("drift type = %q, want %q", drift[0].Type, ResTypeAgentRuntime)
 	}
 }
 
@@ -219,4 +230,81 @@ func TestReconcilePriorState_PreservesStateFields(t *testing.T) {
 	if got.PackHash != "ph" || got.ConfigHash != "ch" || got.ImageDigest != "sha256:abc" {
 		t.Errorf("state fields must survive reconcile, got %+v", got)
 	}
+}
+
+// A plan made entirely of drift must not summarize as "No changes" — that is
+// exactly the case an operator needs to see. The local summarizer counted
+// DRIFT as an update, which produced "1 to update" for an engine that had
+// vanished.
+func TestSummarizeChanges_DriftHasItsOwnBucket(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes []deploy.ResourceChange
+		want    string
+	}{
+		{
+			name: "drift is reported alongside the create that replaces it",
+			changes: []deploy.ResourceChange{
+				{Action: deploy.ActionDrift}, {Action: deploy.ActionCreate},
+			},
+			want: "1 to create, 1 drifted",
+		},
+		{
+			name:    "a plan of nothing but drift still says so",
+			changes: []deploy.ResourceChange{{Action: deploy.ActionDrift}},
+			want:    "1 drifted",
+		},
+		{
+			name:    "an empty plan is still no changes",
+			changes: nil,
+			want:    "No changes",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := summarizeChanges(tt.changes); got != tt.want {
+				t.Errorf("summarizeChanges = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Only a confirmed NotFound is evidence of absence. Vertex returns
+// InvalidArgument for a malformed resource name, and treating that as "gone"
+// would drop a live engine and plan a create that collides at apply.
+func TestEngineProbe_OnlyNotFoundMeansAbsent(t *testing.T) {
+	ref := adaptersdk.ResourceRef{Name: "a", ID: "projects/p/locations/l/reasoningEngines/a"}
+
+	t.Run("missing engine is confirmed absent", func(t *testing.T) {
+		probe := engineProbe{client: &recordingClient{}}
+		got, err := probe.Exists(context.Background(), ref)
+		if err != nil {
+			t.Fatalf("a confirmed absence is not an error: %v", err)
+		}
+		if got != adaptersdk.ExistsNo {
+			t.Errorf("existence = %v, want ExistsNo", got)
+		}
+	})
+
+	t.Run("present engine exists", func(t *testing.T) {
+		probe := engineProbe{client: &recordingClient{existing: map[string]bool{ref.ID: true}}}
+		got, err := probe.Exists(context.Background(), ref)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != adaptersdk.ExistsYes {
+			t.Errorf("existence = %v, want ExistsYes", got)
+		}
+	})
+
+	t.Run("any other failure is unknown, not absent", func(t *testing.T) {
+		probe := engineProbe{client: &recordingClient{failWith: errors.New("InvalidArgument")}}
+		got, err := probe.Exists(context.Background(), ref)
+		if err == nil {
+			t.Error("a failed lookup must surface the error so the SDK keeps the resource")
+		}
+		if got != adaptersdk.ExistsUnknown {
+			t.Errorf("existence = %v, want ExistsUnknown", got)
+		}
+	})
 }

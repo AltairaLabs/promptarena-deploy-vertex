@@ -3,32 +3,61 @@ package vertex
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"sort"
+
+	"github.com/AltairaLabs/promptarena/deploy"
+	"github.com/AltairaLabs/promptarena/deploy/adaptersdk"
 )
 
+// engineProbe answers the shared drift contract's existence question against
+// the Agent Runtime control plane.
+//
+// Only ErrEngineNotFound is evidence of absence. Everything else is returned as
+// an error, which ReconcilePriorState treats as "keep" — the conservative
+// outcome. This adapter is the reason that rule is spelled out in the SDK: a
+// malformed resource name comes back InvalidArgument rather than NotFound, so
+// any "the lookup failed, so it must be gone" shortcut would drop live engines
+// and plan a create that collides at apply time.
+type engineProbe struct {
+	client gcpClient
+}
+
+// Exists reports whether the engine behind ref is still present.
+func (p engineProbe) Exists(
+	ctx context.Context, ref adaptersdk.ResourceRef,
+) (adaptersdk.Existence, error) {
+	if _, err := p.client.GetEngine(ctx, ref.ID); err != nil {
+		if errors.Is(err, ErrEngineNotFound) {
+			return adaptersdk.ExistsNo, nil
+		}
+		// Logged here rather than swallowed: the shared reconciler keeps the
+		// resource on error, and an operator reading a plan should still learn
+		// that it was not actually verified.
+		log.Printf("vertex: could not verify engine %q (%v) — assuming it still exists",
+			ref.Name, err)
+		return adaptersdk.ExistsUnknown, err
+	}
+	return adaptersdk.ExistsYes, nil
+}
+
 // reconcilePriorState verifies stored state against what the provider actually
-// has, and returns the state to plan against plus a description of any drift.
+// has, and returns the state to plan against plus any drift.
 //
 // A plan built only from stored state cannot see changes made outside
 // promptarena. If an engine was deleted in the console, the stored state still
 // records its resource name, the plan reports an update, and apply then fails
-// with ErrEngineNotFound. Verifying first turns that into an honest create.
+// with ErrEngineNotFound. Verifying first turns that into an honest create,
+// with a DRIFT change explaining why.
 //
-// Resolution rules, chosen so verification can only ever improve the plan:
+// In-flight engines are kept without probing: creation was still running when
+// state was written, so there is no settled resource name to look up, and apply
+// already reconciles them.
 //
-//   - not found    -> dropped, and reported as drift
-//   - in flight    -> kept; creation was still running when state was written,
-//     so there is no settled resource name to look up and apply
-//     already reconciles it
-//   - lookup error -> kept; a failed lookup is not evidence of absence, and
-//     dropping would plan a create that apply would collide with
-//
-// Drift is reported in a stable order so plan output does not churn.
+// Engines are probed in a stable order so plan output does not churn.
 func reconcilePriorState(
 	ctx context.Context, client gcpClient, prior *State,
-) (reconciled *State, drift []string) {
+) (reconciled *State, drift []deploy.ResourceChange) {
 	if prior == nil || len(prior.Engines) == 0 {
 		return prior, nil
 	}
@@ -40,25 +69,23 @@ func reconcilePriorState(
 	sort.Strings(names)
 
 	kept := make(map[string]EngineState, len(prior.Engines))
+	refs := make([]adaptersdk.ResourceRef, 0, len(prior.Engines))
 	for _, name := range names {
 		engine := prior.Engines[name]
-
 		if engine.InFlight || engine.ResourceName == "" {
 			kept[name] = engine
 			continue
 		}
+		refs = append(refs, adaptersdk.ResourceRef{
+			Type: ResTypeAgentRuntime,
+			Name: name,
+			ID:   engine.ResourceName,
+		})
+	}
 
-		if _, err := client.GetEngine(ctx, engine.ResourceName); err != nil {
-			if errors.Is(err, ErrEngineNotFound) {
-				drift = append(drift, fmt.Sprintf(
-					"engine %q (%s) no longer exists and will be recreated",
-					name, engine.ResourceName))
-				continue
-			}
-			log.Printf("vertex: could not verify engine %q (%v) — assuming it still exists",
-				name, err)
-		}
-		kept[name] = engine
+	survivors, drift := adaptersdk.ReconcilePriorState(ctx, engineProbe{client: client}, refs)
+	for _, ref := range survivors {
+		kept[ref.Name] = prior.Engines[ref.Name]
 	}
 
 	out := *prior
@@ -75,7 +102,7 @@ func reconcilePriorState(
 // previously need.
 func (p *Provider) verifiedPriorState(
 	ctx context.Context, cfg *Config, prior *State,
-) (verified *State, drift []string) {
+) (verified *State, drift []deploy.ResourceChange) {
 	if cfg.DryRun || prior == nil || len(prior.Engines) == 0 {
 		return prior, nil
 	}

@@ -70,4 +70,10 @@ type gcpClient interface {
 	ListEnginesByLabel(
 		ctx context.Context, project, location string, labels map[string]string,
 	) ([]Engine, error)
+	// StageObject writes data to a gs://bucket/object URI, overwriting any
+	// object already there. It sits on the engine client rather than in a
+	// client of its own because staging exists only to get a pack to an
+	// engine: the two are one operation from the caller's side, and splitting
+	// them would mean two factories and two dry-run fakes for one deploy.
+	StageObject(ctx context.Context, uri string, data []byte) error
 }

@@ -109,3 +109,10 @@ func labelsMatch(have, want map[string]string) bool {
 	}
 	return true
 }
+
+// StageObject records nothing and contacts nothing. Dry run is the offline
+// mode, so a staged pack is simulated exactly as an engine is: the URI the
+// caller derives is deterministic, and no bytes move.
+func (c *dryRunClient) StageObject(_ context.Context, _ string, _ []byte) error {
+	return nil
+}

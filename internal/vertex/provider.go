@@ -118,6 +118,11 @@ func (p *Provider) Plan(ctx context.Context, req *deploy.PlanRequest) (*deploy.P
 		return nil, err
 	}
 
+	delivery := decidePackDelivery(req.PackJSON, cfg)
+	if deliveryErr := validatePackDelivery(delivery, cfg); deliveryErr != nil {
+		return nil, deliveryErr
+	}
+
 	// Verify stored state against the live control plane so the plan reflects
 	// reality rather than the last thing written down.
 	prior, drift := p.verifiedPriorState(ctx, cfg, prior)
@@ -127,7 +132,7 @@ func (p *Provider) Plan(ctx context.Context, req *deploy.PlanRequest) (*deploy.P
 		Prior:       prior,
 		PackHash:    hashPack(req.PackJSON),
 		ConfigHash:  configHash,
-		Delivery:    decidePackDelivery(req.PackJSON, cfg),
+		Delivery:    delivery,
 		HasA2ATools: hasA2ATools(req.PackJSON),
 		Drift:       drift,
 	}), nil

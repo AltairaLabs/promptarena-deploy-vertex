@@ -1,0 +1,113 @@
+name: Update upstream dependencies
+
+# vertex had no such workflow at all, so every PromptKit and promptarena
+# release had to be picked up by hand. The other three adapters have had one
+# for a while; this is the same idea with both upstreams from the start.
+on:
+  repository_dispatch:
+    types: [promptkit-release, promptarena-release]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Update ${{ github.event.action }} to ${{ github.event.client_payload.version }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Go
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      with:
+        go-version: '1.26.0'
+
+    - name: Update go.mod
+      env:
+        VERSION: ${{ github.event.client_payload.version }}
+        # Read from the environment rather than interpolated into the script:
+        # a dispatch payload is attacker-controlled input to a shell otherwise.
+        EVENT: ${{ github.event.action }}
+      run: |
+        # go mod edit rather than go get: it writes the exact version asked
+        # for and resolves nothing, so the bump is the only change. go get
+        # would also walk the graph — and Sonar flags it here (S8545) for
+        # exactly that unpredictability. The sibling adapters do the same.
+        if [ "$EVENT" = "promptarena-release" ]; then
+          echo "Updating promptarena to $VERSION..."
+          go mod edit -require="github.com/AltairaLabs/promptarena@$VERSION"
+        else
+          echo "Updating PromptKit modules to $VERSION..."
+          # Bump every PromptKit module this repo may reference; go mod tidy
+          # below drops any that turn out to be unused.
+          for m in runtime sdk; do
+            go mod edit -require="github.com/AltairaLabs/PromptKit/$m@$VERSION"
+          done
+        fi
+
+        go mod tidy
+        echo "✓ Updated go.mod"
+
+    - name: Verify build
+      run: |
+        GOWORK=off go build ./...
+        echo "✓ Build succeeded"
+
+    - name: Verify tests
+      run: |
+        GOWORK=off go test ./... -race -count=1
+        echo "✓ Tests passed"
+
+    # The integration tests are not run here — they need GCP credentials and
+    # create billable engines — but they are compiled, because a dependency
+    # bump is exactly the kind of change that breaks them invisibly.
+    - name: Type-check the integration-tagged tests
+      run: GOWORK=off go vet -tags=integration ./...
+
+    - name: Create pull request
+      env:
+        VERSION: ${{ github.event.client_payload.version }}
+        EVENT: ${{ github.event.action }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        if [ "$EVENT" = "promptarena-release" ]; then
+          UPSTREAM="promptarena"
+        else
+          UPSTREAM="PromptKit"
+        fi
+        BRANCH="deps/$UPSTREAM-$VERSION"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        git checkout -b "$BRANCH"
+        git add -A
+        git commit -s -m "deps: update $UPSTREAM to $VERSION" \
+          -m "Triggered by the $UPSTREAM release of $VERSION."
+        git push origin "$BRANCH"
+
+        # Quoted heredoc so backticks are not evaluated; the placeholders are
+        # substituted afterwards.
+        cat <<'PREOF' > /tmp/pr-body.md
+        ## Summary
+
+        - Update `__UPSTREAM__` to `__VERSION__`
+
+        Triggered automatically by the `__UPSTREAM__` release of `__VERSION__`.
+
+        ## Verification
+
+        - [x] `go build ./...` passes
+        - [x] `go test ./... -race` passes
+        - [x] `go vet -tags=integration ./...` passes
+
+        🤖 Generated automatically by the update-deps workflow
+        PREOF
+
+        sed -i "s/__VERSION__/$VERSION/g;s/__UPSTREAM__/$UPSTREAM/g" /tmp/pr-body.md
+
+        gh pr create --title "deps: update $UPSTREAM to $VERSION" --body-file /tmp/pr-body.md
+        echo "✓ Created PR for $BRANCH"

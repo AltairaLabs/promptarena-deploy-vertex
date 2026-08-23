@@ -21,7 +21,7 @@ import (
 
 	"golang.org/x/oauth2/google"
 
-	"github.com/AltairaLabs/PromptKit/runtime/deploy"
+	"github.com/AltairaLabs/promptarena/deploy"
 
 	"github.com/AltairaLabs/promptarena-deploy-vertex/internal/vertex"
 )

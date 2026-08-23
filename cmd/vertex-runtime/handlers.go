@@ -18,8 +18,12 @@ const (
 	classMethodStreamQuery = "stream_query"
 )
 
-// contentTypeNDJSON is the media type for line-delimited JSON responses.
-const contentTypeNDJSON = "application/x-ndjson"
+// Response media types and the header that carries them.
+const (
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+	contentTypeNDJSON = "application/x-ndjson"
+)
 
 // contractRequest is the Agent Runtime request envelope for both routes.
 type contractRequest struct {
@@ -84,7 +88,7 @@ func newUnaryHandler(turn turnFunc) http.Handler {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headerContentType, contentTypeJSON)
 		if err := json.NewEncoder(w).Encode(contractResponse{Output: out}); err != nil {
 			return
 		}
@@ -122,7 +126,7 @@ func writeStream(w http.ResponseWriter, chunks <-chan string, errs <-chan error)
 
 	for text := range chunks {
 		if !wroteHeader {
-			w.Header().Set("Content-Type", contentTypeNDJSON)
+			w.Header().Set(headerContentType, contentTypeNDJSON)
 			w.WriteHeader(http.StatusOK)
 			wroteHeader = true
 		}
@@ -137,7 +141,7 @@ func writeStream(w http.ResponseWriter, chunks <-chan string, errs <-chan error)
 	err := <-errs
 	if err == nil {
 		if !wroteHeader {
-			w.Header().Set("Content-Type", contentTypeNDJSON)
+			w.Header().Set(headerContentType, contentTypeNDJSON)
 			w.WriteHeader(http.StatusOK)
 		}
 		return

@@ -37,7 +37,8 @@ func TestSanitizeLabelValue_Truncates(t *testing.T) {
 
 func TestSanitizeLabelValue_IsDeterministic(t *testing.T) {
 	in := "Some.Pack/Name"
-	if sanitizeLabelValue(in) != sanitizeLabelValue(in) {
+	first, second := sanitizeLabelValue(in), sanitizeLabelValue(in)
+	if first != second {
 		t.Error("sanitizeLabelValue is not deterministic")
 	}
 }

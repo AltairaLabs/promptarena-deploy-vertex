@@ -163,20 +163,6 @@ func (p *Provider) Apply(
 	return state, applyErr
 }
 
-// Destroy is implemented in Phase 1b-ii.
-func (p *Provider) Destroy(
-	_ context.Context, _ *deploy.DestroyRequest, _ deploy.DestroyCallback,
-) error {
-	return fmt.Errorf("destroy: %w", ErrNotImplemented)
-}
-
-// Status is implemented in Phase 1b-ii.
-func (p *Provider) Status(
-	_ context.Context, _ *deploy.StatusRequest,
-) (*deploy.StatusResponse, error) {
-	return nil, fmt.Errorf("status: %w", ErrNotImplemented)
-}
-
 // Import is implemented in Phase 1b-ii.
 func (p *Provider) Import(
 	_ context.Context, _ *deploy.ImportRequest,

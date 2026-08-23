@@ -169,15 +169,23 @@ For token-by-token output, use `:streamQuery` with `class_method`
 
 ## Step 9: Clean up
 
-`destroy` is not implemented yet, so delete the engine yourself:
+Tear the deployment down with:
 
 ```bash
-curl -X DELETE \
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-  "https://us-central1-aiplatform.googleapis.com/v1beta1/<RESOURCE_NAME>"
+promptarena deploy destroy
 ```
 
-An engine left running with `min_instances` above zero keeps billing.
+An engine left running with `min_instances` above zero keeps billing, so this
+matters even for an idle agent.
+
+You can check what is deployed at any time with:
+
+```bash
+promptarena deploy status
+```
+
+It reports each engine's live health rather than what state records, so it will
+tell you if an engine was removed outside promptarena.
 
 ## What next
 

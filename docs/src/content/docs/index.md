@@ -80,12 +80,12 @@ validation time.
 | `validate_config` | Implemented |
 | `plan` | Implemented |
 | `apply` | Implemented |
-| `destroy` | Not implemented |
-| `status` | Not implemented |
+| `destroy` | Implemented |
+| `status` | Implemented |
 | `import` | Not implemented |
 
-Until `destroy` lands, removing engines is a manual step — see
-[resource lifecycle](explanation/resource-lifecycle).
+`import` is not implemented; neither sibling adapter implements it either, so
+an engine created outside promptarena cannot be adopted into state.
 
 ## Known gaps
 

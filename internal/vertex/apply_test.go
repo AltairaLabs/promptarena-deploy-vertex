@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AltairaLabs/PromptKit/runtime/deploy"
+	"github.com/AltairaLabs/promptarena/deploy"
 )
 
 // failingClient wraps the dry-run client and fails one named agent's create, so

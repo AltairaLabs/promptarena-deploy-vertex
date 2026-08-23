@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AltairaLabs/PromptKit/runtime/deploy"
+	"github.com/AltairaLabs/promptarena/deploy"
 )
 
 func validate(t *testing.T, cfg string) *deploy.ValidateResponse {

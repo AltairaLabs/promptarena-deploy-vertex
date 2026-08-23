@@ -5,7 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/AltairaLabs/PromptKit/runtime/deploy"
+	"github.com/AltairaLabs/promptarena/deploy"
+	"github.com/AltairaLabs/promptarena/deploy/adaptersdk"
 )
 
 // Resource type names surfaced in plans.
@@ -28,14 +29,19 @@ type planInput struct {
 	Delivery    PackDelivery
 	HasA2ATools bool
 	// Drift describes engines that were in prior state but no longer exist,
-	// as found by verifying against the live control plane.
-	Drift []string
+	// as found by verifying against the live control plane. They travel as
+	// changes rather than warnings so they are counted and rendered like
+	// everything else in the plan.
+	Drift []deploy.ResourceChange
 }
 
 // buildPlan diffs desired against prior state and returns the resource changes.
 // It performs no I/O: everything it needs has already been gathered.
 func buildPlan(in *planInput) *deploy.PlanResponse {
-	changes := planEngineChanges(in)
+	// Drift first: each entry explains why the engine below it is being
+	// created rather than updated.
+	changes := append([]deploy.ResourceChange{}, in.Drift...)
+	changes = append(changes, planEngineChanges(in)...)
 	if !in.Delivery.Inline {
 		changes = append(changes, deploy.ResourceChange{
 			Type:   ResTypePackObject,
@@ -136,10 +142,6 @@ func engineChange(in *planInput, name string) deploy.ResourceChange {
 func planWarnings(in *planInput) []string {
 	var warnings []string
 
-	// Drift first: it explains why an engine the user believes is deployed is
-	// being created rather than updated.
-	warnings = append(warnings, in.Drift...)
-
 	if in.HasA2ATools {
 		warnings = append(warnings,
 			"the pack declares a2a__ tools, but agent-to-agent calls are not wired by "+
@@ -162,44 +164,11 @@ func planWarnings(in *planInput) []string {
 	return warnings
 }
 
-// summaryPartCount is the number of action buckets a summary can mention:
-// create, update, delete and unchanged.
-const summaryPartCount = 4
-
 // summarizeChanges renders a one-line summary of the plan.
+//
+// This defers to the SDK so DRIFT lands in its own bucket. The local version
+// counted it as an update, which was harmless while drift was reported as
+// warning text and wrong the moment it became a change.
 func summarizeChanges(changes []deploy.ResourceChange) string {
-	var create, update, del, unchanged int
-	for i := range changes {
-		switch changes[i].Action {
-		case deploy.ActionCreate:
-			create++
-		case deploy.ActionUpdate:
-			update++
-		case deploy.ActionDelete:
-			del++
-		case deploy.ActionNoChange:
-			unchanged++
-		case deploy.ActionDrift:
-			update++
-		}
-	}
-
-	parts := make([]string, 0, summaryPartCount)
-	if create > 0 {
-		parts = append(parts, fmt.Sprintf("%d to create", create))
-	}
-	if update > 0 {
-		parts = append(parts, fmt.Sprintf("%d to update", update))
-	}
-	if del > 0 {
-		parts = append(parts, fmt.Sprintf("%d to delete", del))
-	}
-	if unchanged > 0 {
-		parts = append(parts, fmt.Sprintf("%d unchanged", unchanged))
-	}
-
-	if len(parts) == 0 {
-		return "No changes"
-	}
-	return strings.Join(parts, ", ")
+	return adaptersdk.SummarizeChanges(changes)
 }

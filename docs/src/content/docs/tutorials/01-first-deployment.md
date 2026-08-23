@@ -85,12 +85,17 @@ gcloud artifacts repositories add-iam-policy-binding ghcr-remote \
 ## Step 4: Create a service account for the engine
 
 ```bash
-gcloud iam service-accounts create agent --project=my-project
+gcloud iam service-accounts create agent-runtime --project=my-project
 
 gcloud projects add-iam-policy-binding my-project \
-  --member="serviceAccount:agent@my-project.iam.gserviceaccount.com" \
+  --member="serviceAccount:agent-runtime@my-project.iam.gserviceaccount.com" \
   --role=roles/aiplatform.user
 ```
+
+If you substitute your own name, it must be 6–30 characters. A shorter one is
+rejected by the first command, and the binding then fails with an error about
+IAM *conditions* — which sends you looking in the wrong place, since the real
+cause is that the account was never created.
 
 If you leave `service_account` unset, the engine runs as the Reasoning Engine
 Service Agent instead, which usually lacks `roles/aiplatform.user` — the adapter
@@ -107,7 +112,7 @@ deploy:
     project: my-project
     location: us-central1
     image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-vertex-runtime
-    service_account: agent@my-project.iam.gserviceaccount.com
+    service_account: agent-runtime@my-project.iam.gserviceaccount.com
     providers:
       - name: default
         role: llm

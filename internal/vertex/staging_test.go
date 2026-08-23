@@ -164,3 +164,61 @@ func TestStagedPackURIShape(t *testing.T) {
 		t.Errorf("stagedPackURI = %q, want empty without a bucket", got)
 	}
 }
+
+// splitGCSURI is the other half of a contract: the URI this adapter writes is
+// the URI cmd/vertex-runtime reads with parseGCSURI. These cases mirror that
+// function's, so a change to either shape fails here rather than at an engine's
+// first startup.
+func TestSplitGCSURI(t *testing.T) {
+	t.Run("splits a valid URI", func(t *testing.T) {
+		bucket, object, err := splitGCSURI("gs://my-bucket/packs/abc/pack.json")
+		if err != nil {
+			t.Fatalf("splitGCSURI: %v", err)
+		}
+		if bucket != "my-bucket" {
+			t.Errorf("bucket = %q, want my-bucket", bucket)
+		}
+		// The object keeps every segment after the bucket; splitting on the
+		// last slash instead would address the wrong object.
+		if object != "packs/abc/pack.json" {
+			t.Errorf("object = %q, want the full object path", object)
+		}
+	})
+
+	rejects := []struct {
+		name string
+		uri  string
+	}{
+		{"no scheme", "my-bucket/pack.json"},
+		{"wrong scheme", "s3://my-bucket/pack.json"},
+		{"bucket only", "gs://my-bucket"},
+		{"empty bucket", "gs:///pack.json"},
+		{"empty object", "gs://my-bucket/"},
+		{"empty", ""},
+	}
+	for _, tt := range rejects {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := splitGCSURI(tt.uri); err == nil {
+				t.Errorf("splitGCSURI(%q) accepted an unusable URI", tt.uri)
+			}
+		})
+	}
+}
+
+// What stagedPackURI builds must be what splitGCSURI can take apart. If these
+// two ever disagree the adapter uploads to one place and tells the engine to
+// read from another.
+func TestStagedURIRoundTrips(t *testing.T) {
+	uri := stagedPackURI("gs://bucket", "hash")
+
+	bucket, object, err := splitGCSURI(uri)
+	if err != nil {
+		t.Fatalf("the URI this adapter builds must be one it can split: %v", err)
+	}
+	if bucket != "bucket" {
+		t.Errorf("bucket = %q, want bucket", bucket)
+	}
+	if object != stagedPackObject("hash") {
+		t.Errorf("object = %q, want %q", object, stagedPackObject("hash"))
+	}
+}

@@ -32,15 +32,19 @@ jobs:
         # a dispatch payload is attacker-controlled input to a shell otherwise.
         EVENT: ${{ github.event.action }}
       run: |
+        # go mod edit rather than go get: it writes the exact version asked
+        # for and resolves nothing, so the bump is the only change. go get
+        # would also walk the graph — and Sonar flags it here (S8545) for
+        # exactly that unpredictability. The sibling adapters do the same.
         if [ "$EVENT" = "promptarena-release" ]; then
           echo "Updating promptarena to $VERSION..."
-          GOFLAGS=-mod=mod go get "github.com/AltairaLabs/promptarena@$VERSION"
+          go mod edit -require="github.com/AltairaLabs/promptarena@$VERSION"
         else
           echo "Updating PromptKit modules to $VERSION..."
           # Bump every PromptKit module this repo may reference; go mod tidy
           # below drops any that turn out to be unused.
           for m in runtime sdk; do
-            GOFLAGS=-mod=mod go get "github.com/AltairaLabs/PromptKit/$m@$VERSION"
+            go mod edit -require="github.com/AltairaLabs/PromptKit/$m@$VERSION"
           done
         fi
 

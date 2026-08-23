@@ -56,17 +56,17 @@ engine's full desired spec is re-sent.
 An engine present in state but whose agent has left the pack is deleted on the
 next apply.
 
-There is currently **no `destroy` method**. Tearing down a deployment entirely
-means deleting the engines yourself:
+`destroy` deletes every engine in state. An engine that is already gone counts
+as success, so a teardown retried after a partial failure converges rather than
+becoming manual work, and one engine failing to delete does not strand the
+rest — each is attempted and every failure is reported.
 
-```bash
-curl -X DELETE \
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-  "https://us-central1-aiplatform.googleapis.com/v1beta1/<RESOURCE_NAME>"
-```
+An engine recorded mid-creation has no resource name to address. Destroy reports
+it rather than skipping it silently, because it may still be running and only
+you can resolve that.
 
-`status` and `import` are also unimplemented, so the adapter cannot yet tell you
-an engine's live health, or adopt an engine it did not create.
+`import` is not implemented, so an engine the adapter did not create cannot be
+adopted into state.
 
 ## Pack delivery
 

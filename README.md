@@ -75,8 +75,8 @@ rejected rather than silently merged.
 | `validate_config` | Implemented |
 | `plan` | Implemented |
 | `apply` | Implemented |
-| `destroy` | Not implemented |
-| `status` | Not implemented |
+| `destroy` | Implemented |
+| `status` | Implemented |
 | `import` | Not implemented |
 
 ### Deploying: prerequisites

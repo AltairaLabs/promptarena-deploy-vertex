@@ -182,12 +182,9 @@ func TestProviderApply_DryRunMakesNoRealCalls(t *testing.T) {
 	}
 }
 
-func TestProviderApply_StagedPackNotYetSupported(t *testing.T) {
-	big := `{"id":"demo","prompts":{"assistant":{}},"padding":"` +
-		strings.Repeat("x", 30000) + `"}`
-
+func TestProviderApply_StagesAPackOverTheInlineLimit(t *testing.T) {
 	req := &deploy.PlanRequest{
-		PackJSON: big,
+		PackJSON: oversizePack(),
 		DeployConfig: `{
 			"project":"p","location":"us-central1","dry_run":true,
 			"staging_bucket":"gs://b",
@@ -196,9 +193,49 @@ func TestProviderApply_StagedPackNotYetSupported(t *testing.T) {
 		}`,
 	}
 
-	if _, err := NewProvider().Apply(context.Background(), req, nil); err == nil {
-		t.Fatal("a pack over the inline limit must fail until GCS staging exists")
+	state, err := NewProvider().Apply(context.Background(), req, nil)
+	if err != nil {
+		t.Fatalf("a pack over the inline limit must be staged, not rejected: %v", err)
 	}
+
+	parsed, err := parseState(state)
+	if err != nil {
+		t.Fatalf("parse state: %v", err)
+	}
+	if parsed.StagedPackURI == "" {
+		t.Error("state records no staged pack URI, so the engine has no pack to read")
+	}
+	if !strings.HasPrefix(parsed.StagedPackURI, "gs://b/") {
+		t.Errorf("staged URI = %q, want it under the configured bucket", parsed.StagedPackURI)
+	}
+}
+
+// Without a bucket there is nowhere to put it. Failing at plan is the point:
+// the old behaviour let plan promise a pack_object that apply could not create.
+func TestProviderPlan_RejectsAnOversizePackWithNoBucket(t *testing.T) {
+	req := &deploy.PlanRequest{
+		PackJSON: oversizePack(),
+		DeployConfig: `{
+			"project":"p","location":"us-central1","dry_run":true,
+			"image":"us-central1-docker.pkg.dev/p/r/i",
+			"providers":[{"name":"default","role":"llm","type":"gemini","model":"m"}]
+		}`,
+		ArenaConfig: `{}`,
+	}
+
+	_, err := NewProvider().Plan(context.Background(), req)
+	if err == nil {
+		t.Fatal("plan must refuse a pack it cannot deliver")
+	}
+	if !strings.Contains(err.Error(), "staging_bucket") {
+		t.Errorf("err = %v, want it to name the missing setting", err)
+	}
+}
+
+// oversizePack is a pack comfortably over the default inline limit.
+func oversizePack() string {
+	return `{"id":"demo","prompts":{"assistant":{}},"padding":"` +
+		strings.Repeat("x", 30000) + `"}`
 }
 
 func TestProviderApply_RejectsInvalidConfig(t *testing.T) {

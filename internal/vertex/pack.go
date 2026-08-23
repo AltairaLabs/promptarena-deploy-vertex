@@ -23,12 +23,8 @@ type PackDelivery struct {
 // decidePackDelivery chooses between inline and staged delivery. A pack exactly
 // at the limit is still inline; only exceeding it forces staging.
 func decidePackDelivery(packJSON string, cfg *Config) PackDelivery {
-	limit := cfg.PackInlineLimitBytes
-	if limit <= 0 {
-		limit = DefaultPackInlineLimitBytes
-	}
 	size := len(packJSON)
-	return PackDelivery{Inline: size <= limit, SizeBytes: size}
+	return PackDelivery{Inline: size <= inlineLimit(cfg), SizeBytes: size}
 }
 
 // AgentInfo names one agent the deployment will serve.

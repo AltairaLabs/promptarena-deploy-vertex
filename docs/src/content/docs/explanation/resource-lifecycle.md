@@ -80,6 +80,13 @@ near 32 KiB, and the pack is not the only variable being injected. A pack that
 exceeds the limit with no `staging_bucket` configured fails at plan time rather
 than at deploy time.
 
+The staged object is keyed by pack hash — `packs/<hash>/pack.json` — so
+re-applying an unchanged pack uploads nothing, and a changed pack lands beside
+the old one rather than overwriting it. That matters because engines resolve
+their pack at startup: overwriting in place would hand a restarting engine the
+new pack while its siblings still ran the old one. The trade is that old
+objects accumulate, and `destroy` does not remove them.
+
 ## Multi-agent packs
 
 Every agent becomes an independent engine sharing the same image, service

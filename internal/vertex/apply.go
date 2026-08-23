@@ -99,6 +99,15 @@ func applyEngines(
 	prior *State,
 	report *adaptersdk.ProgressReporter,
 ) (*State, error) {
+	// Stage before building any engine spec: a non-inline pack has no usable
+	// spec until its URI exists, so a failure here should stop the deploy
+	// rather than surface once per engine.
+	stagedURI, err := stagePack(ctx, client, in, prior)
+	if err != nil {
+		return prior, err
+	}
+	in.StagedPackURI = stagedURI
+
 	next := newState()
 	next.AdapterVersion = Version
 	next.PackHash = in.PackHash

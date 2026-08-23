@@ -57,7 +57,7 @@ Runtime that is the deployment's service account, so no API keys are involved.
 ## Identity
 
 ```yaml
-service_account: agent@my-project.iam.gserviceaccount.com
+service_account: agent-runtime@my-project.iam.gserviceaccount.com
 ```
 
 The service account the engine runs as. It needs `roles/aiplatform.user` to call
@@ -163,7 +163,7 @@ deploy:
     project: my-project
     location: us-central1
     image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-vertex-runtime
-    service_account: agent@my-project.iam.gserviceaccount.com
+    service_account: agent-runtime@my-project.iam.gserviceaccount.com
 
     resource_limits:
       cpu: "2"

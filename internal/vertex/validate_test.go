@@ -46,7 +46,7 @@ func TestValidateConfig_Valid(t *testing.T) {
 	resp := validate(t, `{
 		"project": "my-project",
 		"location": "us-central1",
-		"service_account": "agent@my-project.iam.gserviceaccount.com",
+		"service_account": "agent-runtime@my-project.iam.gserviceaccount.com",
 		"image": "us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-vertex-runtime",
 		"providers": [{"name":"default","role":"llm","type":"gemini","model":"gemini-2.5-flash"}]
 	}`)
@@ -114,7 +114,7 @@ func TestValidateConfig_WarnsOnDockerfileEscapeHatch(t *testing.T) {
 		"image_mode": "cloudbuild",
 		"dockerfile_path": "./Dockerfile",
 		"staging_bucket": "gs://my-bucket",
-		"service_account": "agent@my-project.iam.gserviceaccount.com",
+		"service_account": "agent-runtime@my-project.iam.gserviceaccount.com",
 		"providers": [{"name":"default","type":"gemini","model":"m"}]
 	}`)
 

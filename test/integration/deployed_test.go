@@ -145,6 +145,14 @@ func deployConfig(t *testing.T, env testEnv) string {
 // registering cleanup that destroys it even when the test fails.
 func deployedEngine(t *testing.T, env testEnv) string {
 	t.Helper()
+	name, _ := deployedEngineWithState(t, env)
+	return name
+}
+
+// deployedEngineWithState is deployedEngine plus the state blob, which Destroy
+// and Status both take as input.
+func deployedEngineWithState(t *testing.T, env testEnv) (name, state string) {
+	t.Helper()
 
 	provider := vertex.NewProvider()
 	req := &deploy.PlanRequest{
@@ -158,15 +166,17 @@ func deployedEngine(t *testing.T, env testEnv) string {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	name := engineNameFromState(t, state)
+	name = engineNameFromState(t, state)
 
+	// Deleting an engine that is already gone is not an error, so this is safe
+	// even for the tests that destroy it themselves.
 	t.Cleanup(func() {
 		if delErr := deleteEngine(name); delErr != nil {
 			t.Errorf("cleanup: delete engine %s: %v — DELETE IT MANUALLY", name, delErr)
 		}
 	})
 
-	return name
+	return name, state
 }
 
 // stateShape is the subset of adapter state these tests read.
@@ -419,5 +429,121 @@ func TestDeployed_ToolCalling(t *testing.T) {
 	if !strings.Contains(strings.ToLower(got.Output), "purple locker") {
 		t.Errorf("answer does not carry the tool's result: %q\n"+
 			"want the mock status %q to reach the model", got.Output, mockOrderStatus)
+	}
+}
+
+// --- Destroy and Status ----------------------------------------------------
+//
+// Both were implemented recently and had never run against Agent Runtime: the
+// suite covered deploy and invoke only. Everything below exercises a code path
+// whose first execution would otherwise have been someone's real teardown.
+
+// TestDeployed_StatusReportsHealthy checks the adapter's view agrees with
+// Agent Runtime's. Apply succeeding says nothing about whether the container
+// came up, which is the reason Status looks the engine up rather than trusting
+// state.
+func TestDeployed_StatusReportsHealthy(t *testing.T) {
+	env := requireEnv(t)
+	_, state := deployedEngineWithState(t, env)
+
+	resp, err := vertex.NewProvider().Status(context.Background(), &deploy.StatusRequest{
+		DeployConfig: deployConfig(t, env),
+		PriorState:   state,
+	})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	if resp.Status != "deployed" {
+		t.Errorf("Status = %q, want deployed (resources: %+v)", resp.Status, resp.Resources)
+	}
+	if len(resp.Resources) == 0 {
+		t.Fatal("Status reported no resources for a live deployment")
+	}
+	if resp.Resources[0].Status != "healthy" {
+		t.Errorf("resource = %+v, want healthy", resp.Resources[0])
+	}
+	// The endpoint link is the one thing a user needs after a deploy, and
+	// Status is where they look for it once the apply output has scrolled away.
+	if len(resp.Resources[0].Links) == 0 {
+		t.Error("a healthy engine should carry the query endpoint link")
+	}
+}
+
+// TestDeployed_StatusReportsAMissingEngine deletes the engine behind the
+// adapter's back. Reporting that is the whole point of looking it up.
+func TestDeployed_StatusReportsAMissingEngine(t *testing.T) {
+	env := requireEnv(t)
+	name, state := deployedEngineWithState(t, env)
+
+	if err := deleteEngine(name); err != nil {
+		t.Fatalf("delete engine out of band: %v", err)
+	}
+
+	resp, err := vertex.NewProvider().Status(context.Background(), &deploy.StatusRequest{
+		DeployConfig: deployConfig(t, env),
+		PriorState:   state,
+	})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	if resp.Status != "degraded" {
+		t.Errorf("Status = %q, want degraded (resources: %+v)", resp.Status, resp.Resources)
+	}
+	if len(resp.Resources) == 0 || resp.Resources[0].Status != "missing" {
+		t.Fatalf("resources = %+v, want the engine reported missing", resp.Resources)
+	}
+	// Nothing to call, so a link would be a promise the deployment cannot keep.
+	if len(resp.Resources[0].Links) != 0 {
+		t.Errorf("a missing engine must carry no endpoint link, got %+v", resp.Resources[0].Links)
+	}
+}
+
+// TestDeployed_DestroyRemovesTheEngine is the one that matters most: until
+// Destroy existed, teardown was a curl command, and an engine left running with
+// min_instances above zero bills continuously.
+func TestDeployed_DestroyRemovesTheEngine(t *testing.T) {
+	env := requireEnv(t)
+	name, state := deployedEngineWithState(t, env)
+
+	provider := vertex.NewProvider()
+	req := &deploy.DestroyRequest{
+		DeployConfig: deployConfig(t, env),
+		PriorState:   state,
+	}
+
+	var events []*deploy.DestroyEvent
+	if err := provider.Destroy(context.Background(), req,
+		func(e *deploy.DestroyEvent) error { events = append(events, e); return nil }); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+
+	var deleted bool
+	for _, e := range events {
+		if e.Type == "resource" && e.Resource != nil && e.Resource.Action == deploy.ActionDelete {
+			deleted = true
+		}
+	}
+	if !deleted {
+		t.Errorf("events = %+v, want a delete event for the engine", events)
+	}
+
+	// Ask Agent Runtime directly rather than trusting the events. engineURL is
+	// not usable here: it appends ":<method>" and a bare resource GET has no
+	// method, so an empty one yields a trailing colon that the API rejects as a
+	// malformed name — which reads as "still present" rather than "bad URL".
+	getURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1beta1/%s",
+		env.Location, name)
+	if status, body, err := authedRequest(http.MethodGet, getURL, ""); err != nil {
+		t.Fatalf("verify deletion: %v", err)
+	} else if status != http.StatusNotFound {
+		t.Errorf("engine still present after destroy: HTTP %d %s", status, body)
+	}
+
+	// Destroy has to converge, or a teardown retried after a partial failure
+	// becomes manual work.
+	if err := provider.Destroy(context.Background(), req, nil); err != nil {
+		t.Errorf("destroying an already-destroyed deployment must be a no-op, got: %v", err)
 	}
 }

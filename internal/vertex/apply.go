@@ -125,7 +125,8 @@ func applyEngines(
 		}
 		next.Engines[agent.Name] = EngineState{ResourceName: engine.ResourceName}
 
-		resource(report, agent.Name, actionFor(prior, agent.Name))
+		resource(report, agent.Name, actionFor(prior, agent.Name),
+			endpointLinks(in.Cfg.Location, engine.ResourceName)...)
 	}
 
 	if err := deleteRemoved(ctx, client, next, desired, report); err != nil {
@@ -216,7 +217,10 @@ func progress(report *adaptersdk.ProgressReporter, message string, pct float64) 
 
 // resource emits a resource event when a reporter is present. As with progress,
 // a failed callback is advisory and does not fail the apply.
-func resource(report *adaptersdk.ProgressReporter, name string, action deploy.Action) {
+func resource(
+	report *adaptersdk.ProgressReporter, name string, action deploy.Action,
+	links ...deploy.ResourceLink,
+) {
 	if report == nil {
 		return
 	}
@@ -225,6 +229,7 @@ func resource(report *adaptersdk.ProgressReporter, name string, action deploy.Ac
 		Name:   name,
 		Action: action,
 		Status: statusFor(action),
+		Links:  links,
 	})
 }
 

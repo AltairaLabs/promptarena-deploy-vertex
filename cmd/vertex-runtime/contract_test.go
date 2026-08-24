@@ -23,8 +23,8 @@ func contractServer(t *testing.T, packFile, agentName string) string {
 	t.Helper()
 
 	mux := buildMux(
-		newTurnFunc(packFile, agentName, mockOpts(), nil),
-		newStreamFunc(packFile, agentName, mockOpts(), nil),
+		newTurnFunc(packFile, agentName, mockOpts(), nil, nil),
+		newStreamFunc(packFile, agentName, mockOpts(), nil, nil),
 	)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -227,8 +227,8 @@ func TestContract_ToolExecutorRegistrationDoesNotBreakTheTurn(t *testing.T) {
 	}
 
 	mux := buildMux(
-		newTurnFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
-		newStreamFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
+		newTurnFunc(featuresPackFile, featuresAgent, mockOpts(), specs, nil),
+		newStreamFunc(featuresPackFile, featuresAgent, mockOpts(), specs, nil),
 	)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -247,8 +247,8 @@ func TestContract_UnsupportedToolModeStillServes(t *testing.T) {
 	}
 
 	mux := buildMux(
-		newTurnFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
-		newStreamFunc(featuresPackFile, featuresAgent, mockOpts(), specs),
+		newTurnFunc(featuresPackFile, featuresAgent, mockOpts(), specs, nil),
+		newStreamFunc(featuresPackFile, featuresAgent, mockOpts(), specs, nil),
 	)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

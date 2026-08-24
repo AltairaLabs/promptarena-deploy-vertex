@@ -32,6 +32,24 @@ func warnUnsupportedTools(unsupported []string) {
 // "message" is the canonical PromptKit name.
 var messageKeys = []string{"message", "input", "prompt"}
 
+// sessionKeys are the accepted input field names for the conversation to
+// continue, in precedence order.
+var sessionKeys = []string{"session_id", "sessionId", "session"}
+
+// extractSession pulls the session id out of the contract request input.
+//
+// Absent means a one-off turn, which is what every request was before sessions
+// existed — so a caller that does not ask for continuity keeps the behaviour
+// it already had.
+func extractSession(input map[string]any) string {
+	for _, key := range sessionKeys {
+		if text, ok := input[key].(string); ok && text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
 // extractMessage pulls the user turn text out of the contract request input.
 func extractMessage(input map[string]any) (string, error) {
 	for _, key := range messageKeys {
@@ -53,6 +71,7 @@ func extractMessage(input map[string]any) (string, error) {
 // which matches Agent Runtime's concurrent request model.
 func newTurnFunc(
 	packFile, agentName string, opts []sdk.Option, specs map[string]toolSpec,
+	sessions *SessionStore,
 ) turnFunc {
 	return func(ctx context.Context, _ string, input map[string]any) (any, error) {
 		message, err := extractMessage(input)
@@ -60,7 +79,12 @@ func newTurnFunc(
 			return nil, err
 		}
 
-		conv, err := sdk.Open(packFile, agentName, opts...)
+		turnOpts, err := withSession(opts, sessions, extractSession(input))
+		if err != nil {
+			return nil, err
+		}
+
+		conv, err := sdk.Open(packFile, agentName, turnOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("open conversation: %w", err)
 		}
@@ -82,6 +106,7 @@ type streamRequest struct {
 	Opts      []sdk.Option
 	Input     map[string]any
 	Specs     map[string]toolSpec
+	Sessions  *SessionStore
 }
 
 // streamTurn runs one streaming turn, sending each text chunk to out. It
@@ -92,7 +117,12 @@ func streamTurn(ctx context.Context, req streamRequest, out chan<- string) error
 		return err
 	}
 
-	conv, err := sdk.Open(req.PackFile, req.AgentName, req.Opts...)
+	turnOpts, err := withSession(req.Opts, req.Sessions, extractSession(req.Input))
+	if err != nil {
+		return err
+	}
+
+	conv, err := sdk.Open(req.PackFile, req.AgentName, turnOpts...)
 	if err != nil {
 		return fmt.Errorf("open conversation: %w", err)
 	}
@@ -119,6 +149,7 @@ func streamTurn(ctx context.Context, req streamRequest, out chan<- string) error
 // request and streams the turn's text chunks.
 func newStreamFunc(
 	packFile, agentName string, opts []sdk.Option, specs map[string]toolSpec,
+	sessions *SessionStore,
 ) streamFunc {
 	return func(
 		ctx context.Context, _ string, input map[string]any,
@@ -132,6 +163,7 @@ func newStreamFunc(
 			Opts:      opts,
 			Input:     input,
 			Specs:     specs,
+			Sessions:  sessions,
 		}
 
 		go func() {
@@ -145,4 +177,29 @@ func newStreamFunc(
 
 		return out, errCh
 	}
+}
+
+// withSession adds conversation persistence when the caller named a session.
+//
+// A request that names no session keeps the stateless behaviour every request
+// had before. A request that names one when the runtime has no session storage
+// is an error rather than a silent one-off turn: the caller asked for
+// continuity, and quietly not providing it looks to them like an agent that
+// forgets.
+func withSession(
+	opts []sdk.Option, sessions *SessionStore, sessionID string,
+) ([]sdk.Option, error) {
+	if sessionID == "" {
+		return opts, nil
+	}
+	if sessions == nil {
+		return nil, fmt.Errorf(
+			"request names session %q but this runtime has no session storage: "+
+				"%s was not set, so the engine's own sessions cannot be addressed",
+			sessionID, envEngineID)
+	}
+	return append(opts,
+		sdk.WithStateStore(sessions),
+		sdk.WithConversationID(sessionID),
+	), nil
 }

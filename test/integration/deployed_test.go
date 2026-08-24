@@ -254,7 +254,11 @@ func deleteEngine(name string) error {
 	}
 	location := parts[locationIndex]
 
-	url := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1beta1/%s", location, name)
+	// force, because an engine that has served a conversation owns sessions
+	// and the API refuses to delete a parent with children. Without it the
+	// engines that were actually used are the ones cleanup leaves behind.
+	url := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1beta1/%s?force=true",
+		location, name)
 	status, body, err := authedRequest(http.MethodDelete, url, "")
 	if err != nil {
 		return err
@@ -311,10 +315,22 @@ func TestDeployed_StreamQuery(t *testing.T) {
 // askDeployed sends one unary turn and returns the engine's output.
 func askDeployed(t *testing.T, name, location, message string) string {
 	t.Helper()
+	return askDeployedSession(t, name, location, message, "")
+}
+
+// askDeployedSession asks within a named conversation. An empty session is a
+// one-off turn, which is what every request was before sessions existed.
+func askDeployedSession(t *testing.T, name, location, message, session string) string {
+	t.Helper()
+
+	input := fmt.Sprintf(`{"message":%q}`, message)
+	if session != "" {
+		input = fmt.Sprintf(`{"message":%q,"session_id":%q}`, message, session)
+	}
 
 	status, body, err := authedRequest(http.MethodPost,
 		engineURL(name, location, "query"),
-		fmt.Sprintf(`{"class_method":"query","input":{"message":%q}}`, message))
+		fmt.Sprintf(`{"class_method":"query","input":%s}`, input))
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -331,18 +347,12 @@ func askDeployed(t *testing.T, name, location, message string) string {
 	return got.Output
 }
 
-// TestDeployed_SequentialTurnsAreIndependent pins the engine's actual
-// conversation semantics: every request opens a fresh PromptKit conversation,
-// so nothing carries between calls.
+// TestDeployed_SequentialTurnsAreIndependent pins what a request without a
+// session still does.
 //
-// This test used to be called TestDeployed_MultiTurn and asserted only that two
-// requests returned HTTP 200. It passed whether or not context carried, so it
-// proved nothing and its name promised something the runtime does not do.
-//
-// The second turn deliberately depends on the first. A stateless engine cannot
-// answer it, and asking the model to say so gives a checkable signal. If this
-// test starts failing because the engine DID remember, that is a real behaviour
-// change — wire up Agent Runtime sessions, then invert this assertion.
+// Naming no session is the behaviour every request had before sessions
+// existed, and callers relying on it should keep it: each turn stands alone.
+// TestDeployed_SessionCarriesConversation covers the other half.
 func TestDeployed_SequentialTurnsAreIndependent(t *testing.T) {
 	env := requireEnv(t)
 	name := deployedEngine(t, env)
@@ -360,10 +370,57 @@ func TestDeployed_SequentialTurnsAreIndependent(t *testing.T) {
 	t.Logf("turn 2: %s", second)
 
 	if strings.Contains(second, "8675309") {
-		t.Errorf("the engine recalled the first turn: %q\n"+
-			"conversation state now persists between requests — update the runtime "+
-			"protocol docs and invert this assertion", second)
+		t.Errorf("a turn with no session recalled an earlier one: %q", second)
 	}
+}
+
+// TestDeployed_SessionCarriesConversation is the feature: two turns naming the
+// same session share a conversation.
+//
+// The engine has always had the storage — Agent Runtime sessions hang off the
+// reasoningEngine — and the runtime simply never used it, so multi-turn
+// context was the caller's problem.
+func TestDeployed_SessionCarriesConversation(t *testing.T) {
+	env := requireEnv(t)
+	name := deployedEngine(t, env)
+	session := newSessionID("carry")
+
+	first := askDeployedSession(t, name, env.Location,
+		"Remember this number: 8675309. Just acknowledge it.", session)
+	t.Logf("turn 1: %s", first)
+
+	second := askDeployedSession(t, name, env.Location,
+		"Earlier in this conversation I gave you a number. Repeat it back. "+
+			"The number is in the messages above.", session)
+	t.Logf("turn 2: %s", second)
+
+	if !strings.Contains(second, "8675309") {
+		t.Errorf("second turn %q did not recall the first; the session did not carry", second)
+	}
+}
+
+// TestDeployed_SessionsAreIsolated checks one conversation cannot read another.
+func TestDeployed_SessionsAreIsolated(t *testing.T) {
+	env := requireEnv(t)
+	name := deployedEngine(t, env)
+
+	askDeployedSession(t, name, env.Location,
+		"Remember this number: 8675309. Just acknowledge it.", newSessionID("iso-a"))
+
+	other := askDeployedSession(t, name, env.Location,
+		"What number did I ask you to remember? "+
+			"If you have no record of it, reply exactly: NO_MEMORY",
+		newSessionID("iso-b"))
+	t.Logf("other session: %s", other)
+
+	if strings.Contains(other, "8675309") {
+		t.Errorf("a session read another session's conversation: %q", other)
+	}
+}
+
+// newSessionID returns a session id unique to this run.
+func newSessionID(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 }
 
 func TestDeployed_ReapplyIsIdempotent(t *testing.T) {

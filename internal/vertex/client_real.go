@@ -111,8 +111,13 @@ func (c *realClient) GetEngine(ctx context.Context, name string) (*Engine, error
 // DeleteEngine removes an engine. An engine that is already gone is not an
 // error, which keeps destroy idempotent.
 func (c *realClient) DeleteEngine(ctx context.Context, name string) error {
+	// Force, because an engine that has served a conversation owns sessions,
+	// and the API refuses to delete a parent with children. Without it a
+	// destroy fails on exactly the engines that were used, leaving them
+	// running and billing.
 	op, err := c.client.DeleteReasoningEngine(ctx, &aiplatformpb.DeleteReasoningEngineRequest{
-		Name: name,
+		Name:  name,
+		Force: true,
 	})
 	if err != nil {
 		if isNotFound(err) {

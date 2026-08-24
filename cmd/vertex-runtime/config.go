@@ -36,6 +36,16 @@ const (
 const (
 	envProjectFallback  = "GOOGLE_CLOUD_PROJECT"
 	envLocationFallback = "GOOGLE_CLOUD_LOCATION"
+
+	// envEngineID is what Agent Runtime injects to tell a deployed agent
+	// which engine it is. Documented for ADK agents; whether it reaches a
+	// fully custom container is not, so nothing here assumes it is present.
+	envEngineID = "GOOGLE_CLOUD_AGENT_ENGINE_ID"
+
+	// envEngineLocation is the engine's own location. Undocumented but read
+	// by Google's own SDK ahead of GOOGLE_CLOUD_LOCATION, so it is preferred
+	// here too, with the documented variable as the fallback.
+	envEngineLocation = "GOOGLE_CLOUD_AGENT_ENGINE_LOCATION"
 )
 
 // firstEnv returns the first non-empty environment variable among names.
@@ -65,6 +75,24 @@ type runtimeConfig struct {
 	OTLPEndpoint   string
 	TracingEnabled bool
 	ToolSpecsJSON  string
+
+	// EngineID identifies this engine, when the runtime is told. Empty means
+	// sessions cannot be reached: their API is addressed relative to the
+	// engine, so without it there is nowhere to store a conversation.
+	EngineID string
+}
+
+// engineName is the resource this engine's sessions hang from.
+//
+// Agent Runtime never hands a container its own resource name, only the pieces
+// — so it is composed here, the same way Google's own SDK composes it. Empty
+// when any piece is missing, which callers read as "no session storage".
+func (c *runtimeConfig) engineName() string {
+	if c.EngineID == "" || c.Project == "" || c.Location == "" {
+		return ""
+	}
+	return fmt.Sprintf("projects/%s/locations/%s/reasoningEngines/%s",
+		c.Project, c.Location, c.EngineID)
 }
 
 // loadConfig reads configuration from environment variables. Exactly one pack
@@ -76,7 +104,8 @@ func loadConfig() (*runtimeConfig, error) {
 		AgentName:     os.Getenv(envAgentName),
 		ProvidersJSON: os.Getenv(envProviders),
 		Project:       firstEnv(envProject, envProjectFallback),
-		Location:      firstEnv(envLocation, envLocationFallback),
+		Location:      firstEnv(envLocation, envEngineLocation, envLocationFallback),
+		EngineID:      os.Getenv(envEngineID),
 		Port:          contractPort,
 	}
 

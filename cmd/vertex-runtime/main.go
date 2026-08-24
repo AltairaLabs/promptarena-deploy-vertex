@@ -73,9 +73,14 @@ func run(ctx context.Context, log *slog.Logger) error {
 		log.Info("tool executors configured", "count", len(specs))
 	}
 
+	sessions, err := openSessionStore(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+
 	mux := buildMux(
-		newTurnFunc(packFile, agentName, opts, specs),
-		newStreamFunc(packFile, agentName, opts, specs),
+		newTurnFunc(packFile, agentName, opts, specs, sessions),
+		newStreamFunc(packFile, agentName, opts, specs, sessions),
 	)
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 

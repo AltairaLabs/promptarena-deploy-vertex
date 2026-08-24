@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/AltairaLabs/PromptKit/runtime/statestore"
 	"github.com/AltairaLabs/PromptKit/runtime/types"
 )
 
@@ -367,5 +369,168 @@ func TestSessionStore_ConcurrentFirstWritesBothSucceed(t *testing.T) {
 		[]types.Message{{Role: roleUser, Content: "hello"}})
 	if err != nil {
 		t.Fatalf("losing a create race should not fail the turn: %v", err)
+	}
+}
+
+// TestSessionStore_SaveAppendsOnlyWhatIsMissing covers the BulkWriter path.
+//
+// Sessions are append-only, so replacing state means appending the difference.
+// Rewriting what is already there would duplicate every earlier turn.
+func TestSessionStore_SaveAppendsOnlyWhatIsMissing(t *testing.T) {
+	fake := newFakeSessionClient()
+	store := NewSessionStore(fake, testEngine)
+	ctx := context.Background()
+
+	if err := store.AppendMessages(ctx, "s5", []types.Message{
+		{Role: roleUser, Content: "one"},
+	}); err != nil {
+		t.Fatalf("AppendMessages: %v", err)
+	}
+
+	err := store.Save(ctx, &statestore.ConversationState{
+		ID: "s5",
+		Messages: []types.Message{
+			{Role: roleUser, Content: "one"},
+			{Role: roleAssistant, Content: "two"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	state, err := store.Load(ctx, "s5")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(state.Messages) != 2 {
+		t.Errorf("got %d messages, want 2 — Save should add the difference, not repeat the whole state: %+v",
+			len(state.Messages), state.Messages)
+	}
+}
+
+// TestSessionStore_SaveIsANoOpWhenNothingIsNew guards against re-appending.
+func TestSessionStore_SaveIsANoOpWhenNothingIsNew(t *testing.T) {
+	fake := newFakeSessionClient()
+	store := NewSessionStore(fake, testEngine)
+	ctx := context.Background()
+
+	msgs := []types.Message{{Role: roleUser, Content: "one"}}
+	if err := store.AppendMessages(ctx, "s6", msgs); err != nil {
+		t.Fatalf("AppendMessages: %v", err)
+	}
+	before := len(fake.appended)
+
+	if err := store.Save(ctx, &statestore.ConversationState{ID: "s6", Messages: msgs}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if len(fake.appended) != before {
+		t.Errorf("Save re-appended messages that were already stored")
+	}
+}
+
+// TestSessionStore_SaveIgnoresNilState checks the nil guard.
+func TestSessionStore_SaveIgnoresNilState(t *testing.T) {
+	store := NewSessionStore(newFakeSessionClient(), testEngine)
+	if err := store.Save(context.Background(), nil); err != nil {
+		t.Errorf("Save(nil) should do nothing, got %v", err)
+	}
+}
+
+// TestSessionStore_ForkCopiesAConversation covers branching a conversation.
+func TestSessionStore_ForkCopiesAConversation(t *testing.T) {
+	fake := newFakeSessionClient()
+	store := NewSessionStore(fake, testEngine)
+	ctx := context.Background()
+
+	if err := store.AppendMessages(ctx, "src", []types.Message{
+		{Role: roleUser, Content: "remember this"},
+	}); err != nil {
+		t.Fatalf("AppendMessages: %v", err)
+	}
+
+	if err := store.Fork(ctx, "src", "copy"); err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+
+	copied, err := store.Load(ctx, "copy")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(copied.Messages) != 1 || copied.Messages[0].Content != "remember this" {
+		t.Errorf("fork did not carry the conversation: %+v", copied.Messages)
+	}
+
+	// The original is untouched.
+	src, err := store.Load(ctx, "src")
+	if err != nil {
+		t.Fatalf("Load source: %v", err)
+	}
+	if len(src.Messages) != 1 {
+		t.Errorf("fork changed the source: %+v", src.Messages)
+	}
+}
+
+// TestSessionStore_ForkOfNothingIsNotFound distinguishes an empty conversation
+// from one that was never started.
+func TestSessionStore_ForkOfNothingIsNotFound(t *testing.T) {
+	store := NewSessionStore(newFakeSessionClient(), testEngine)
+	err := store.Fork(context.Background(), "missing", "copy")
+	if !errors.Is(err, statestore.ErrNotFound) {
+		t.Errorf("Fork of a conversation that does not exist = %v, want ErrNotFound", err)
+	}
+}
+
+// TestSessionStore_ReportsARealFailure checks an API error is surfaced rather
+// than read as an empty conversation.
+func TestSessionStore_ReportsARealFailure(t *testing.T) {
+	fake := newFakeSessionClient()
+	fake.getErr = status.Error(codes.PermissionDenied, "no access to sessions")
+	store := NewSessionStore(fake, testEngine)
+
+	err := store.AppendMessages(context.Background(), "s7",
+		[]types.Message{{Role: roleUser, Content: "hi"}})
+	if err == nil {
+		t.Fatal("a permission failure should not pass silently")
+	}
+	if !strings.Contains(err.Error(), "s7") {
+		t.Errorf("error should name the session, got %v", err)
+	}
+}
+
+// TestMessageFromEvent covers the events that carry no usable message.
+func TestMessageFromEvent(t *testing.T) {
+	text := "hello"
+	for _, tt := range []struct {
+		name  string
+		event *aiplatformpb.SessionEvent
+		want  bool
+	}{
+		{
+			"user text",
+			&aiplatformpb.SessionEvent{
+				Author: authorUser,
+				Content: &aiplatformpb.Content{
+					Parts: []*aiplatformpb.Part{{Data: &aiplatformpb.Part_Text{Text: text}}},
+				},
+			},
+			true,
+		},
+		{
+			"an author with no role",
+			&aiplatformpb.SessionEvent{Author: "system"},
+			false,
+		},
+		{
+			"no content",
+			&aiplatformpb.SessionEvent{Author: authorUser},
+			false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := messageFromEvent(tt.event)
+			if ok != tt.want {
+				t.Errorf("messageFromEvent ok = %v, want %v", ok, tt.want)
+			}
+		})
 	}
 }

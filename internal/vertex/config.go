@@ -158,15 +158,16 @@ func (c *Config) validateImageMode() []string {
 			}
 		}
 	case ImageModeCloudBuild:
-		var errs []string
-		if c.RuntimeBinaryPath == "" && c.DockerfilePath == "" {
-			errs = append(errs,
-				"cloudbuild mode requires runtime_binary_path or dockerfile_path")
+		// Refused rather than accepted and ignored. Apply never built
+		// anything for this mode, and since cloudbuild leaves image empty the
+		// engine was created with an empty image URI — a deploy that reported
+		// success and produced something that could not run.
+		return []string{
+			"image_mode \"cloudbuild\" is not implemented: nothing builds the " +
+				"image, so the engine would be created with no image at all. " +
+				"Build the runtime image yourself and use image_mode \"prebuilt\" " +
+				"with an Artifact Registry reference to it",
 		}
-		if c.StagingBucket == "" {
-			errs = append(errs, "staging_bucket is required in cloudbuild mode")
-		}
-		return errs
 	default:
 		return []string{fmt.Sprintf(
 			"image_mode %q must be %q or %q", c.ImageMode, ImageModePrebuilt, ImageModeCloudBuild)}

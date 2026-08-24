@@ -107,22 +107,24 @@ func TestValidateConfig_WarnsOnMissingServiceAccount(t *testing.T) {
 	}
 }
 
-func TestValidateConfig_WarnsOnDockerfileEscapeHatch(t *testing.T) {
+// TestValidateConfig_RefusesCloudBuild covers the mode that validated and then
+// deployed an engine with no image.
+func TestValidateConfig_RefusesCloudBuild(t *testing.T) {
 	resp := validate(t, `{
 		"project": "my-project",
 		"location": "us-central1",
 		"image_mode": "cloudbuild",
-		"dockerfile_path": "./Dockerfile",
+		"runtime_binary_path": "./runtime",
 		"staging_bucket": "gs://my-bucket",
 		"service_account": "agent-runtime@my-project.iam.gserviceaccount.com",
 		"providers": [{"name":"default","type":"gemini","model":"m"}]
 	}`)
 
-	if !resp.Valid {
-		t.Fatalf("expected valid, got %v", resp.Errors)
+	if resp.Valid {
+		t.Fatal("cloudbuild should not validate while nothing builds the image")
 	}
-	if !strings.Contains(strings.Join(resp.Warnings, "; "), "8080") {
-		t.Errorf("expected a runtime-contract warning naming the port, got %v", resp.Warnings)
+	if !strings.Contains(strings.Join(resp.Errors, "; "), "prebuilt") {
+		t.Errorf("error should point at prebuilt, got %v", resp.Errors)
 	}
 }
 

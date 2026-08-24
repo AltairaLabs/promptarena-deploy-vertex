@@ -92,10 +92,9 @@ an engine created outside promptarena cannot be adopted into state.
 These are documented rather than hidden, because each one fails at a point where
 the deployment still looks healthy:
 
-- **`cloudbuild` image mode is config surface only.** It validates, but `apply`
-  always deploys `image`. Use `prebuilt`.
+- **`cloudbuild` image mode is refused.** Nothing builds the image, so it is
+  rejected at plan rather than deploying an engine with no image. Use
+  `prebuilt`.
 - **A2A is not wired.** Agent cards are generated but cannot be attached.
-- **`live` tools carry `url` and `method` only.** No headers, timeouts or
-  request/response mapping.
 - **Guardrails are invisible in telemetry.** Evals are traced; a firing
   `validators` entry leaves no trace attribute.

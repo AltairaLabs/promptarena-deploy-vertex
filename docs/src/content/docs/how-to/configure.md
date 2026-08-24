@@ -77,10 +77,10 @@ image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-v
 Agent Runtime cannot pull from `ghcr.io`. Point `image` at Artifact Registry —
 either a remote repository proxying GHCR, or an image you pushed directly.
 
-:::danger[`cloudbuild` mode is not implemented]
-`image_mode: cloudbuild` passes validation and accepts `runtime_binary_path`,
-`dockerfile_path` and `staging_bucket`, but `apply` always deploys `image`. In
-cloudbuild mode `image` is typically empty, so the create fails. Use `prebuilt`.
+:::note[`cloudbuild` is refused]
+`image_mode: cloudbuild` is rejected at plan. Nothing builds the image, and the
+mode leaves `image` empty, so an apply would have created an engine with no
+image at all. Build the runtime image yourself and use `prebuilt`.
 :::
 
 ## Scaling

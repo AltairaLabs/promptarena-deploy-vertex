@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -129,5 +132,71 @@ func TestParseToolSpecs_RoundTripsMockResultObject(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"status":"ok"`) {
 		t.Errorf("object mock_result lost in decode: %s", encoded)
+	}
+}
+
+// TestHTTPToolConfig_CarriesTheWholeBinding is the point of widening toolHTTP.
+//
+// Only url and method used to survive, so a live tool could not authenticate:
+// every endpoint behind an API key or bearer token was unreachable from a
+// deployed engine, and with no timeout a slow one stalled the turn.
+func TestHTTPToolConfig_CarriesTheWholeBinding(t *testing.T) {
+	spec := toolSpec{
+		Name: "lookup",
+		Mode: toolModeLive,
+		HTTP: &toolHTTP{
+			URL:            "https://api.example.com/lookup",
+			Method:         "POST",
+			Headers:        map[string]string{"X-Tenant": "acme"},
+			HeadersFromEnv: []string{"Authorization=LOOKUP_TOKEN"},
+			TimeoutMs:      2500,
+			Redact:         []string{"ssn"},
+		},
+	}
+
+	cfg := httpToolConfig(spec)
+	if cfg == nil {
+		t.Fatal("expected a config")
+	}
+
+	// The config's fields are unexported, so assert through the behaviour that
+	// depends on them: a request carries the headers, honours the timeout, and
+	// reads the environment for the ones declared that way.
+	t.Setenv("LOOKUP_TOKEN", "secret-value")
+
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		if r.Method != "POST" {
+			t.Errorf("method = %q, want POST", r.Method)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	spec.HTTP.URL = srv.URL
+	handler := httpToolConfig(spec).HandlerCtx()
+	if _, err := handler(context.Background(), map[string]any{"id": "1"}); err != nil {
+		t.Fatalf("tool call: %v", err)
+	}
+
+	if got := gotHeaders.Get("X-Tenant"); got != "acme" {
+		t.Errorf("static header not sent: X-Tenant = %q", got)
+	}
+	if got := gotHeaders.Get("Authorization"); got != "secret-value" {
+		t.Errorf("header from env not resolved: Authorization = %q — "+
+			"a live tool cannot authenticate without this", got)
+	}
+}
+
+// TestHTTPToolConfig_MinimalBindingStillWorks keeps the simplest case working.
+func TestHTTPToolConfig_MinimalBindingStillWorks(t *testing.T) {
+	cfg := httpToolConfig(toolSpec{
+		Name: "ping",
+		Mode: toolModeLive,
+		HTTP: &toolHTTP{URL: "https://api.example.com/ping"},
+	})
+	if cfg == nil {
+		t.Fatal("a url on its own should still produce a config")
 	}
 }

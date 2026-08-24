@@ -58,6 +58,14 @@ type Config struct {
 	MaxInstances         *int            `json:"max_instances,omitempty"`
 	ContainerConcurrency *int            `json:"container_concurrency,omitempty"`
 
+	// Env sets additional container environment variables on the engine.
+	//
+	// A live tool's headers_from_env names variables the runtime reads at call
+	// time, and without this there is no way to put them there. Values are
+	// stored on the engine and readable by anyone who can get it, so a real
+	// secret belongs in Secret Manager rather than here.
+	Env map[string]string `json:"env,omitempty"`
+
 	Labels               map[string]string `json:"labels,omitempty"`
 	PackInlineLimitBytes int               `json:"pack_inline_limit_bytes,omitempty"`
 	DryRun               bool              `json:"dry_run,omitempty"`

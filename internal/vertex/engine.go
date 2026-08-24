@@ -3,6 +3,8 @@ package vertex
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 )
 
 // Environment variable names injected into the runtime container. These must
@@ -78,6 +80,20 @@ func buildEngine(in *engineInput, agent AgentInfo) (built *EngineSpec, errors []
 }
 
 // buildEngineEnv assembles the runtime's environment.
+// envPrefix is the namespace the adapter owns on the engine's environment.
+const envPrefix = "PROMPTPACK_"
+
+// sortedKeys returns a map's keys in a stable order, so the same config always
+// produces the same environment.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, errors []string) {
 	encodedBindings, err := json.Marshal(in.Bindings)
 	if err != nil {
@@ -93,6 +109,21 @@ func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, 
 
 	if in.ToolSpecsJSON != "" {
 		env[envToolSpecs] = in.ToolSpecsJSON
+	}
+
+	// Operator-supplied variables go in first, so a typo cannot displace one
+	// the runtime needs to start — a pack or provider variable overwritten
+	// here would fail at boot with nothing pointing at the cause.
+	for _, name := range sortedKeys(in.Cfg.Env) {
+		if strings.HasPrefix(name, envPrefix) {
+			errors = append(errors, fmt.Sprintf(
+				"env %q is reserved: %s* names are set by the adapter", name, envPrefix))
+			continue
+		}
+		env[name] = in.Cfg.Env[name]
+	}
+	if len(errors) > 0 {
+		return nil, errors
 	}
 
 	if in.Cfg.Observability != nil && in.Cfg.Observability.TracingEnabled {

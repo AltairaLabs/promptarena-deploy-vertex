@@ -116,6 +116,38 @@ starting with a letter. Two keys that would sanitize to the same label are
 **rejected** rather than silently merged — a merge would drop one of them
 without saying so.
 
+## Environment variables
+
+```yaml
+env:
+  LOOKUP_TOKEN: "..."
+```
+
+Sets additional variables on the engine's container. The adapter's own
+`PROMPTPACK_*` variables are reserved: setting one is **rejected** at plan
+rather than allowed to displace a value the runtime needs to start, which would
+otherwise fail at container boot with nothing pointing at the cause.
+
+The main use is a `live` tool's `headers_from_env`, which names variables the
+runtime reads when it calls the tool:
+
+```yaml
+tool_specs:
+  lookup_order:
+    mode: live
+    http:
+      url: https://api.example.com/orders
+      method: POST
+      headers_from_env:
+        - "Authorization=LOOKUP_TOKEN"
+      timeout_ms: 5000
+```
+
+The value is read inside the runtime at call time, so it never passes through
+the tool definition. It does sit on the engine, though, and anyone who can get
+the engine can read it — so a real secret belongs in Secret Manager, mounted or
+fetched by the tool, rather than here.
+
 ## Pack delivery
 
 ```yaml

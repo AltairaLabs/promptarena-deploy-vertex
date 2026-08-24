@@ -228,3 +228,43 @@ func TestBuildEngine_ToolSpecsInjected(t *testing.T) {
 		t.Errorf("%s = %q, want %q", envToolSpecs, spec.Env[envToolSpecs], in.ToolSpecsJSON)
 	}
 }
+
+// TestBuildEngineEnv_CarriesOperatorVariables covers the env block a live
+// tool's headers_from_env depends on.
+//
+// Those headers name variables the runtime reads at call time, so without a
+// way to set them on the engine the feature is wired to nothing.
+func TestBuildEngineEnv_CarriesOperatorVariables(t *testing.T) {
+	in := testEngineInput()
+	in.Cfg.Env = map[string]string{"LOOKUP_TOKEN": "from-config"}
+
+	env, errs := buildEngineEnv(in, "assistant")
+	if len(errs) != 0 {
+		t.Fatalf("buildEngineEnv: %v", errs)
+	}
+	if env["LOOKUP_TOKEN"] != "from-config" {
+		t.Errorf("operator variable not set: %v", env["LOOKUP_TOKEN"])
+	}
+	// The adapter's own variables survive alongside it.
+	if env[envAgentName] != "assistant" {
+		t.Errorf("adapter variable lost: %s = %q", envAgentName, env[envAgentName])
+	}
+}
+
+// TestBuildEngineEnv_RefusesReservedNames stops a typo from displacing a
+// variable the runtime needs to boot.
+//
+// Overwriting one of these fails at container start with nothing pointing at
+// the cause, so it is refused at plan instead.
+func TestBuildEngineEnv_RefusesReservedNames(t *testing.T) {
+	in := testEngineInput()
+	in.Cfg.Env = map[string]string{envAgentName: "hijacked"}
+
+	_, errs := buildEngineEnv(in, "assistant")
+	if len(errs) == 0 {
+		t.Fatal("expected setting a PROMPTPACK_ variable to be refused")
+	}
+	if !strings.Contains(errs[0], envAgentName) {
+		t.Errorf("error should name the variable, got %v", errs)
+	}
+}

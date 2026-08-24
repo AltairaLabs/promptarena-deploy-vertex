@@ -23,6 +23,41 @@ One Agent Runtime engine per agent in the pack.
 The engine's display name is the agent's name, and its resource name is stable
 across applies — an update replaces the spec in place rather than recreating.
 
+### Where the agent's name comes from
+
+For a multi-agent pack it is the member's name. For a single-prompt pack it is
+the prompt's key in the compiled pack, and that key is the prompt's
+`task_type` — not the id in `prompt_configs`, and not the arena's
+`metadata.name`.
+
+That is worth setting deliberately before the first apply, because the
+skeleton most kits start from uses `task_type: general`, which deploys an
+engine called `general`:
+
+```console
+$ promptarena deploy plan
+Plan: 1 to create
+  + agent_runtime.general (Create the Agent Runtime engine)
+```
+
+Giving the prompt a meaningful `task_type` — and matching it in every scenario
+that references it — names the engine after the job it does:
+
+```console
+  + agent_runtime.sales_ops (Create the Agent Runtime engine)
+```
+
+You can confirm what a pack will produce before deploying anything:
+
+```console
+$ promptarena export --config config.arena.yaml --output sample.pack.json
+$ python3 -c "import json; print(list(json.load(open('sample.pack.json'))['prompts'].keys()))"
+['sales_ops']
+```
+
+Renaming later means a new engine: the display name is part of a long-lived
+Google resource, so the old one has to be destroyed and a new one applied.
+
 ### Spec fields the adapter sets
 
 | Field | Source |

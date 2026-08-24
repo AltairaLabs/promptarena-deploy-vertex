@@ -138,6 +138,12 @@ prior adapter state and reports what an apply would change:
 Read the warnings. They cover the two IAM grants above, plus anything unusual
 about the pack.
 
+Check the engine's name in that output before applying. It comes from the
+prompt's `task_type`, so a pack still using the starter value deploys an engine
+called `general`. The name becomes part of a long-lived Google resource, and
+changing it later means destroying that engine and applying a new one — see
+[where the agent's name comes from](/reference/resource-types/#where-the-agents-name-comes-from).
+
 ## Step 7: Apply
 
 ```bash

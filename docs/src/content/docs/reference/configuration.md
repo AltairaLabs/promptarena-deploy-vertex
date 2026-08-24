@@ -19,22 +19,22 @@ unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `image_mode` | string | `prebuilt` | `prebuilt` or `cloudbuild`. |
-| `image` | string | — | Artifact Registry reference to the runtime image. Required in `prebuilt` mode. |
-| `runtime_binary_path` | string | — | Go binary to containerize (`cloudbuild` mode). |
-| `dockerfile_path` | string | — | User-supplied Dockerfile (`cloudbuild` escape hatch). |
+| `image_mode` | string | `prebuilt` | Only `prebuilt` is supported. |
+| `image` | string | — | Artifact Registry reference to the runtime image. Required. |
 
-:::danger[`cloudbuild` is not implemented]
-`image_mode: cloudbuild` validates and produces diagnostics, but `apply` always
-deploys `image` — it never builds anything. Use `prebuilt`.
+:::note[`cloudbuild` is refused]
+`image_mode: cloudbuild` is rejected at plan. Nothing builds the image, and the
+mode leaves `image` empty, so an apply would have created an engine with no
+image at all. Build the runtime image yourself and use `prebuilt`.
+
+`runtime_binary_path` and `dockerfile_path` only ever applied to that mode and
+have no effect.
 :::
 
 Validation:
 
 - `prebuilt` without `image` → `image is required in prebuilt mode`
-- `cloudbuild` without `runtime_binary_path` or `dockerfile_path` →
-  `cloudbuild mode requires runtime_binary_path or dockerfile_path`
-- `cloudbuild` without `staging_bucket` → `staging_bucket is required in cloudbuild mode`
+- `cloudbuild` → `image_mode "cloudbuild" is not implemented`, naming `prebuilt`
 - Any other value → `image_mode "x" must be "prebuilt" or "cloudbuild"`
 
 ## Identity

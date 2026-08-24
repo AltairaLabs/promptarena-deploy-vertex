@@ -45,12 +45,5 @@ func diagnoseConfig(cfg *Config) []string {
 				"engine is created and then fails to start with an image access error")
 	}
 
-	if cfg.ImageMode == ImageModeCloudBuild && cfg.DockerfilePath != "" {
-		warnings = append(warnings,
-			"dockerfile_path bypasses the generated Dockerfile, so honoring the Agent "+
-				"Runtime contract (listen on 0.0.0.0:8080, serve /api/reasoning_engine and "+
-				"/api/stream_reasoning_engine) becomes your responsibility")
-	}
-
 	return warnings
 }

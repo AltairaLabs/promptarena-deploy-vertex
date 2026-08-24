@@ -53,29 +53,6 @@ func TestValidateStructure_PrebuiltRequiresImage(t *testing.T) {
 	}
 }
 
-func TestValidateStructure_CloudBuildRequiresASource(t *testing.T) {
-	cfg := &Config{Project: "p", Location: "us-central1", ImageMode: ImageModeCloudBuild}
-
-	errs := cfg.validateStructure()
-	if !strings.Contains(strings.Join(errs, "; "), "runtime_binary_path") {
-		t.Errorf("cloudbuild without a source should error, got %v", errs)
-	}
-}
-
-func TestValidateStructure_CloudBuildRequiresStagingBucket(t *testing.T) {
-	cfg := &Config{
-		Project:           "p",
-		Location:          "us-central1",
-		ImageMode:         ImageModeCloudBuild,
-		RuntimeBinaryPath: "./bin/runtime",
-	}
-
-	errs := cfg.validateStructure()
-	if !strings.Contains(strings.Join(errs, "; "), "staging_bucket") {
-		t.Errorf("cloudbuild without staging_bucket should error, got %v", errs)
-	}
-}
-
 func TestValidateStructure_UnknownImageMode(t *testing.T) {
 	cfg := &Config{Project: "p", Location: "us-central1", ImageMode: "magic"}
 
@@ -176,5 +153,31 @@ func TestValidateStructure_OTLPEndpointURLAccepted(t *testing.T) {
 
 	if errs := cfg.validateStructure(); len(errs) != 0 {
 		t.Errorf("a URL endpoint should validate, got %v", errs)
+	}
+}
+
+// TestValidateStructure_CloudBuildIsRefused covers a mode that used to validate
+// and then produce nothing.
+//
+// Nothing built an image for cloudbuild, and the mode leaves image empty, so
+// apply created an engine with no image URI at all — a deploy that reported
+// success and left something that could not run. Refusing says so at plan.
+func TestValidateStructure_CloudBuildIsRefused(t *testing.T) {
+	cfg := &Config{
+		Project:           "p",
+		Location:          "us-central1",
+		ImageMode:         ImageModeCloudBuild,
+		RuntimeBinaryPath: "./runtime",
+		StagingBucket:     "gs://bucket",
+	}
+
+	errs := cfg.validateStructure()
+	if len(errs) == 0 {
+		t.Fatal("cloudbuild should be refused until something builds the image")
+	}
+	// The message has to say what to do instead, or an operator is only told
+	// that the thing they configured is gone.
+	if !strings.Contains(errs[0], ImageModePrebuilt) {
+		t.Errorf("error should point at prebuilt, got %q", errs[0])
 	}
 }

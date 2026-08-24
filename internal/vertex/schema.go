@@ -17,12 +17,12 @@ const configSchema = `{
     },
     "staging_bucket": {
       "type": "string",
-      "description": "gs:// bucket for staged packs and cloudbuild contexts"
+      "description": "gs:// bucket for staged packs"
     },
     "image_mode": {
       "type": "string",
       "enum": ["prebuilt", "cloudbuild"],
-      "description": "prebuilt references a published image; cloudbuild builds one in-project"
+      "description": "prebuilt references a published image; cloudbuild is not implemented and is refused"
     },
     "image": {
       "type": "string",
@@ -30,11 +30,11 @@ const configSchema = `{
     },
     "runtime_binary_path": {
       "type": "string",
-      "description": "Path to a Go runtime binary to containerize (cloudbuild mode)"
+      "description": "Unused: only applied to the unimplemented cloudbuild mode"
     },
     "dockerfile_path": {
       "type": "string",
-      "description": "Path to a user-supplied Dockerfile (cloudbuild escape hatch)"
+      "description": "Unused: only applied to the unimplemented cloudbuild mode"
     },
     "service_account": {
       "type": "string",

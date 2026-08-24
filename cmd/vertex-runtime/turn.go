@@ -39,7 +39,7 @@ var sessionKeys = []string{"session_id", "sessionId", "session"}
 // extractSession pulls the session id out of the contract request input.
 //
 // Absent means a one-off turn, which is what every request was before sessions
-// existed — so a caller that does not ask for continuity keeps the behaviour
+// existed — so a caller that does not ask for continuity keeps the behavior
 // it already had.
 func extractSession(input map[string]any) string {
 	for _, key := range sessionKeys {
@@ -111,7 +111,7 @@ type streamRequest struct {
 
 // streamTurn runs one streaming turn, sending each text chunk to out. It
 // returns the terminal error, or nil when the turn completes normally.
-func streamTurn(ctx context.Context, req streamRequest, out chan<- string) error {
+func streamTurn(ctx context.Context, req *streamRequest, out chan<- string) error {
 	message, err := extractMessage(req.Input)
 	if err != nil {
 		return err
@@ -170,7 +170,7 @@ func newStreamFunc(
 			defer close(out)
 			defer close(errCh)
 
-			if err := streamTurn(ctx, req, out); err != nil {
+			if err := streamTurn(ctx, &req, out); err != nil {
 				errCh <- err
 			}
 		}()
@@ -181,7 +181,7 @@ func newStreamFunc(
 
 // withSession adds conversation persistence when the caller named a session.
 //
-// A request that names no session keeps the stateless behaviour every request
+// A request that names no session keeps the stateless behavior every request
 // had before. A request that names one when the runtime has no session storage
 // is an error rather than a silent one-off turn: the caller asked for
 // continuity, and quietly not providing it looks to them like an agent that

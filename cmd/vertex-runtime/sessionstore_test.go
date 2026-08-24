@@ -113,7 +113,7 @@ func (fakeCreateOp) Wait(_ context.Context, _ ...gaxCallOption) (*aiplatformpb.S
 
 const testEngine = "projects/p/locations/us-central1/reasoningEngines/123"
 
-// TestSessionStore_CarriesConversationAcrossTurns is the behaviour this whole
+// TestSessionStore_CarriesConversationAcrossTurns is the behavior this whole
 // store exists for: what one turn says, the next turn can read.
 func TestSessionStore_CarriesConversationAcrossTurns(t *testing.T) {
 	store := NewSessionStore(newFakeSessionClient(), testEngine)

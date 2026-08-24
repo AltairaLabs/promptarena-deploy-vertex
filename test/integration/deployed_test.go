@@ -350,7 +350,7 @@ func askDeployedSession(t *testing.T, name, location, message, session string) s
 // TestDeployed_SequentialTurnsAreIndependent pins what a request without a
 // session still does.
 //
-// Naming no session is the behaviour every request had before sessions
+// Naming no session is the behavior every request had before sessions
 // existed, and callers relying on it should keep it: each turn stands alone.
 // TestDeployed_SessionCarriesConversation covers the other half.
 func TestDeployed_SequentialTurnsAreIndependent(t *testing.T) {

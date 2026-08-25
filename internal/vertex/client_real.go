@@ -3,11 +3,14 @@ package vertex
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
+	"net/http"
 	"sort"
 
 	aiplatform "cloud.google.com/go/aiplatform/apiv1beta1"
 	aiplatformpb "cloud.google.com/go/aiplatform/apiv1beta1/aiplatformpb"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
@@ -26,7 +29,13 @@ type realClient struct {
 	client   *aiplatform.ReasoningEngineClient
 	project  string
 	location string
+
+	// httpClient carries the one call the generated client cannot make.
+	httpClient *http.Client
 }
+
+// cloudPlatformScope is the OAuth scope the Agent Runtime API accepts.
+const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
 
 // newRealClient dials the regional Agent Runtime endpoint using Application
 // Default Credentials.
@@ -38,10 +47,18 @@ func newRealClient(ctx context.Context, cfg *Config) (gcpClient, error) {
 		return nil, fmt.Errorf("create reasoning engine client: %w", err)
 	}
 
+	// The agent card goes over REST, and it authorizes with the same
+	// Application Default Credentials the SDK client just used.
+	httpClient, err := google.DefaultClient(ctx, cloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("credentials for the agent card call: %w", err)
+	}
+
 	return &realClient{
-		client:   client,
-		project:  cfg.Project,
-		location: cfg.Location,
+		client:     client,
+		project:    cfg.Project,
+		location:   cfg.Location,
+		httpClient: httpClient,
 	}, nil
 }
 
@@ -64,7 +81,26 @@ func (c *realClient) CreateEngine(ctx context.Context, spec *EngineSpec) (*Engin
 	if err != nil {
 		return nil, fmt.Errorf("waiting for engine %q to be created: %w", spec.DisplayName, err)
 	}
-	return engineFromProto(created), nil
+
+	engine := engineFromProto(created)
+	c.attachAgentCard(ctx, engine.ResourceName, spec)
+	return engine, nil
+}
+
+// attachAgentCard sets spec.agentCard on a deployed engine.
+//
+// Failure is logged rather than returned: the engine is created and serving by
+// this point, and losing A2A discovery is worth a warning, not an apply that
+// reports failure over something already running.
+func (c *realClient) attachAgentCard(ctx context.Context, name string, spec *EngineSpec) {
+	if len(spec.AgentCard) == 0 {
+		return
+	}
+	err := patchAgentCard(ctx, c.httpClient, agentCardEndpoint(c.location), name, spec.AgentCard)
+	if err != nil {
+		log.Printf("vertex: could not attach the agent card to %q (%v) — "+
+			"the engine is serving, but it will not be discoverable over A2A", name, err)
+	}
 }
 
 // UpdateEngine patches an existing engine and waits for completion.
@@ -77,7 +113,7 @@ func (c *realClient) UpdateEngine(
 	op, err := c.client.UpdateReasoningEngine(ctx, &aiplatformpb.UpdateReasoningEngineRequest{
 		ReasoningEngine: engine,
 		UpdateMask: &fieldmaskpb.FieldMask{
-			Paths: []string{"display_name", "description", "labels", "spec"},
+			Paths: []string{"display_name", "description", "labels", specField},
 		},
 	})
 	if err != nil {
@@ -91,7 +127,13 @@ func (c *realClient) UpdateEngine(
 	if err != nil {
 		return nil, fmt.Errorf("waiting for engine %q to update: %w", name, err)
 	}
-	return engineFromProto(updated), nil
+
+	// Also on update: the SDK's update mask covers spec, and sending a spec
+	// the generated client cannot express would otherwise clear the card that
+	// create attached.
+	result := engineFromProto(updated)
+	c.attachAgentCard(ctx, result.ResourceName, spec)
+	return result, nil
 }
 
 // GetEngine fetches one engine.
@@ -208,11 +250,13 @@ func specToProto(spec *EngineSpec) *aiplatformpb.ReasoningEngine {
 // deploymentSpecFrom builds the deployment spec, or nil when nothing is set so
 // the API's own defaults apply.
 //
-// EngineSpec.ContainerConcurrency is deliberately not mapped: the published
-// protos have no such field, even though the REST schema documents one.
+// container_concurrency is mapped now. It used to be dropped because the
+// published protos had no such field, which left the config accepted and
+// silently ignored; the generated client carries it as of aiplatform v1.126.0.
 func deploymentSpecFrom(spec *EngineSpec) *aiplatformpb.ReasoningEngineSpec_DeploymentSpec {
 	if len(spec.Env) == 0 && len(spec.ResourceLimits) == 0 &&
-		spec.MinInstances == nil && spec.MaxInstances == nil {
+		spec.MinInstances == nil && spec.MaxInstances == nil &&
+		spec.ContainerConcurrency == nil {
 		return nil
 	}
 
@@ -237,6 +281,9 @@ func deploymentSpecFrom(spec *EngineSpec) *aiplatformpb.ReasoningEngineSpec_Depl
 	}
 	if v, ok := toInt32(spec.MaxInstances); ok {
 		out.MaxInstances = &v
+	}
+	if v, ok := toInt32(spec.ContainerConcurrency); ok {
+		out.ContainerConcurrency = &v
 	}
 
 	return out

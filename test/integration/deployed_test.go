@@ -48,6 +48,31 @@ const locationIndex = 3
 
 // featurePack declares a tool, a validator and a template variable, so the
 // deployed engine exercises more than a bare system prompt.
+// agentsPack declares an agents section, which is the only shape that produces
+// an A2A Agent Card — a single-prompt pack yields none, and that is correct.
+const agentsPack = `{
+  "$schema": "https://promptpack.org/schema/latest/promptpack.schema.json",
+  "id": "vertex-a2a",
+  "name": "Vertex A2A Pack",
+  "version": "1.0.0",
+  "template_engine": { "version": "v1", "syntax": "{{variable}}" },
+  "prompts": {
+    "support": {
+      "id": "support",
+      "name": "Support Agent",
+      "description": "Answers support questions",
+      "version": "1.0.0",
+      "system_template": "You are a terse support agent. Answer in one short sentence."
+    }
+  },
+  "agents": {
+    "entry": "support",
+    "members": {
+      "support": { "description": "Answers support questions" }
+    }
+  }
+}`
+
 const featurePack = `{
   "$schema": "https://promptpack.org/schema/latest/promptpack.schema.json",
   "id": "vertex-integration",
@@ -603,4 +628,57 @@ func TestDeployed_DestroyRemovesTheEngine(t *testing.T) {
 	if err := provider.Destroy(context.Background(), req, nil); err != nil {
 		t.Errorf("destroying an already-destroyed deployment must be a no-op, got: %v", err)
 	}
+}
+
+// TestDeployed_AgentCardIsAttached covers A2A discovery.
+//
+// The card is set through a REST patch because the field is absent from the
+// published protos, so nothing about it is exercised by the SDK path — only a
+// real deploy shows whether the engine actually carries one.
+func TestDeployed_AgentCardIsAttached(t *testing.T) {
+	env := requireEnv(t)
+
+	provider := vertex.NewProvider()
+	state, err := provider.Apply(context.Background(), &deploy.PlanRequest{
+		PackJSON:     agentsPack,
+		DeployConfig: deployConfig(t, env),
+		ArenaConfig:  featureArena,
+	}, nil)
+	if err != nil {
+		if state != "" {
+			t.Cleanup(func() { _ = deleteEngine(engineNameFromState(t, state)) })
+		}
+		t.Fatalf("Apply: %v", err)
+	}
+
+	name := engineNameFromState(t, state)
+	t.Cleanup(func() {
+		if delErr := deleteEngine(name); delErr != nil {
+			t.Errorf("cleanup: delete engine %s: %v — DELETE IT MANUALLY", name, delErr)
+		}
+	})
+
+	status, body, err := authedRequest(http.MethodGet,
+		fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1beta1/%s", env.Location, name), "")
+	if err != nil {
+		t.Fatalf("get engine: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("get engine: status %d, body %s", status, body)
+	}
+
+	var engine struct {
+		Spec struct {
+			AgentCard map[string]any `json:"agentCard"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal([]byte(body), &engine); err != nil {
+		t.Fatalf("decode engine: %v", err)
+	}
+
+	if len(engine.Spec.AgentCard) == 0 {
+		t.Fatalf("the deployed engine carries no agent card, so it is not "+
+			"discoverable over A2A: %s", body)
+	}
+	t.Logf("agent card: %v", engine.Spec.AgentCard)
 }

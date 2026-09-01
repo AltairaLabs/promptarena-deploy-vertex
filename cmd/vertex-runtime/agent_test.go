@@ -3,13 +3,16 @@ package main
 import (
 	"testing"
 
+	"github.com/AltairaLabs/PromptKit/runtime/packspec"
 	"github.com/AltairaLabs/PromptKit/runtime/prompt"
 )
 
 func TestResolveAgentName_EnvWins(t *testing.T) {
 	cfg := &runtimeConfig{AgentName: "explicit"}
 	pack := &prompt.Pack{
-		Agents: &prompt.AgentsConfig{Entry: "entry"},
+		Pack: packspec.Pack{
+			Agents: &prompt.AgentsConfig{Entry: "entry"},
+		},
 	}
 
 	got, err := resolveAgentName(cfg, pack)
@@ -24,7 +27,9 @@ func TestResolveAgentName_EnvWins(t *testing.T) {
 func TestResolveAgentName_PackEntry(t *testing.T) {
 	cfg := &runtimeConfig{}
 	pack := &prompt.Pack{
-		Agents: &prompt.AgentsConfig{Entry: "entry"},
+		Pack: packspec.Pack{
+			Agents: &prompt.AgentsConfig{Entry: "entry"},
+		},
 	}
 
 	got, err := resolveAgentName(cfg, pack)
@@ -39,7 +44,9 @@ func TestResolveAgentName_PackEntry(t *testing.T) {
 func TestResolveAgentName_SinglePrompt(t *testing.T) {
 	cfg := &runtimeConfig{}
 	pack := &prompt.Pack{
-		Prompts: map[string]*prompt.PackPrompt{"solo": {}},
+		Pack: packspec.Pack{
+			Prompts: map[string]*prompt.PackPrompt{"solo": {}},
+		},
 	}
 
 	got, err := resolveAgentName(cfg, pack)
@@ -54,7 +61,9 @@ func TestResolveAgentName_SinglePrompt(t *testing.T) {
 func TestResolveAgentName_Ambiguous(t *testing.T) {
 	cfg := &runtimeConfig{}
 	pack := &prompt.Pack{
-		Prompts: map[string]*prompt.PackPrompt{"a": {}, "b": {}},
+		Pack: packspec.Pack{
+			Prompts: map[string]*prompt.PackPrompt{"a": {}, "b": {}},
+		},
 	}
 
 	if _, err := resolveAgentName(cfg, pack); err == nil {

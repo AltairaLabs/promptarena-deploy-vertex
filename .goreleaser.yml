@@ -74,5 +74,9 @@ release:
   github:
     owner: AltairaLabs
     name: promptarena-deploy-vertex
-  draft: true
+  # Must stay false: `promptarena deploy adapter install vertex` fetches
+  # releases/download/<tag>/<asset> anonymously, and draft releases are only
+  # visible to users with push access — a draft publishes assets that 404 for
+  # everyone the installer is meant to serve.
+  draft: false
   name_template: "promptarena-deploy-vertex {{.Version}}"

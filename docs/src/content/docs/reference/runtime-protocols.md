@@ -77,6 +77,21 @@ Streaming uses the same shape against `:streamQuery` with `class_method` set to
 
 ## Conversation state
 
-Each request opens a fresh conversation. The runtime holds no session state
-between calls, so multi-turn context is the caller's responsibility — send the
-history you want the model to see.
+A request continues a conversation by naming a session in its `input`. The
+runtime accepts `session_id`, `sessionId` or `session`, in that precedence
+order:
+
+```json
+{"class_method":"query","input":{"message":"and the one before?","session_id":"abc-123"}}
+```
+
+State lives in the engine's own **Agent Runtime sessions**, not in the runtime
+process, so it survives a restart and is shared across replicas. The engine is
+addressed through `GOOGLE_CLOUD_AGENT_ENGINE_ID`, which the adapter sets on
+deploy.
+
+Omitting the session is still a one-off turn — the behaviour every request had
+before sessions existed — so a caller that does not ask for continuity keeps
+what it had. Naming a session when the runtime has **no** session storage is an
+error rather than a silent one-off turn: the caller asked for continuity, and
+quietly not providing it looks to them like an agent that forgets.

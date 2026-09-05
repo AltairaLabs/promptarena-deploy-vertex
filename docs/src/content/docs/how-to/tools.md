@@ -51,7 +51,7 @@ diff — not a silent no-op that leaves the old value deployed.
 | Mode | Support |
 |---|---|
 | `mock` | Full — `mock_result` and `mock_template`. |
-| `live` | HTTP `url` and `method` only. |
+| `live` | Full — `url`, `method`, `headers`, `headers_from_env`, `timeout_ms`, `redact`. |
 | `mcp` | Not supported. |
 | `exec` | Not supported. |
 | `client` | Not supported. |
@@ -98,12 +98,24 @@ tool_specs:
     http:
       url: https://api.example.com/weather
       method: GET
+      headers:
+        Accept: application/json
+      headers_from_env:
+        - "Authorization=WEATHER_API_KEY"
+      timeout_ms: 5000
+      redact:
+        - Authorization
 ```
 
-Only `url` and `method` are forwarded. Headers, timeouts, redaction and
-request/response mapping are **not** carried yet, so a live tool needing an auth
-header will not work. A `live` tool with no `http.url` is reported as
-unsupported rather than registered.
+Only `url` is required; a `live` tool without one is reported as unsupported
+rather than registered.
+
+`headers_from_env` names headers as `Header-Name=ENV_VAR` and the value is read
+in the runtime at call time, so a secret reaches the tool without the adapter
+ever holding it. The variable has to exist on the engine, which the deploy
+config's [`env` block](../configure/#environment-variables) is for. `redact`
+names fields to keep out of logs and traces, and `timeout_ms` caps a single
+call.
 
 The engine calls the URL from inside Agent Runtime, so the endpoint must be
 reachable from Google's network and the engine's service account identity is

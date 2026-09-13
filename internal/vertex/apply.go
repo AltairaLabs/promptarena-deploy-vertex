@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/AltairaLabs/promptarena/deploy"
-	"github.com/AltairaLabs/promptarena/deploy/adaptersdk"
+	"github.com/AltairaLabs/promptarena/v2/deploy"
+	"github.com/AltairaLabs/promptarena/v2/deploy/adaptersdk"
 )
 
 // applyProgressSpan is the fraction of the progress bar the engine phase owns.

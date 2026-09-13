@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AltairaLabs/PromptKit/sdk"
+	"github.com/AltairaLabs/PromptKit/sdk/v2"
 )
 
 // warnOnce ensures unsupported tool modes are reported once per process rather

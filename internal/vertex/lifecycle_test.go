@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AltairaLabs/promptarena/deploy"
+	"github.com/AltairaLabs/promptarena/v2/deploy"
 )
 
 // lifecycleClient records deletes and can fail a chosen engine, which is what

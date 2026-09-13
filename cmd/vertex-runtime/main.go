@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/AltairaLabs/PromptKit/runtime/prompt"
+	"github.com/AltairaLabs/PromptKit/runtime/v2/prompt"
 )
 
 // packDir is where the resolved pack file is written inside the container.

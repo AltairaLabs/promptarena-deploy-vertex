@@ -242,6 +242,13 @@ engines with no routing between them.
 The input field may be `message`, `input`, or `prompt`. `class_method` defaults to
 `query` and `stream_query` respectively when omitted.
 
+A request continues a conversation by naming a session in `input` —
+`session_id`, `sessionId` or `session`, in that order of precedence. History is
+stored in the engine's own Agent Runtime sessions, so it survives restarts and is
+shared across replicas. Omitting the session gives a one-off turn. Naming one
+when the runtime has no session storage (no `GOOGLE_CLOUD_AGENT_ENGINE_ID`, or no
+project or location) is an error, not a silent one-off turn.
+
 The streaming route emits one line per token chunk and flushes after each. If the
 turn fails after streaming has begun, the failure arrives as a trailing
 `{"error":"…"}` line, because the `200` status has already been sent.
@@ -257,6 +264,7 @@ turn fails after streaming has begun, the failure arrives as a trailing
 | `PROMPTPACK_TOOL_SPECS` | JSON map of tool name to execution config; absent when the arena declares no tools |
 | `GOOGLE_CLOUD_PROJECT` | GCP project for Vertex model routing |
 | `GOOGLE_CLOUD_LOCATION` | GCP region for Vertex model routing |
+| `GOOGLE_CLOUD_AGENT_ENGINE_ID` | The engine's own ID, which addresses its sessions. Expected from Agent Runtime, not set by the adapter; without it, session storage is off |
 
 One of `PROMPTPACK_PACK_JSON` or `PROMPTPACK_PACK_URI` is required.
 
@@ -274,7 +282,7 @@ Supported modes:
 | Mode | Support |
 |---|---|
 | `mock` | Full. `mock_result` and `mock_template`, with the same semantics as `promptarena run`: a rendered template is parsed back as JSON, falling back to `{"result": "<text>"}`. |
-| `live` | HTTP `url` and `method` only. Headers, timeouts and request/response mapping are not forwarded yet. |
+| `live` | `http.url` (required), `method`, `headers`, `headers_from_env`, `timeout_ms` and `redact`. `headers_from_env` entries are `Header-Name=ENV_VAR`, read on the engine at call time, so the variable must be set there (the deploy config's `env` block). Request/response mapping (`request`, `response`, `query_params`, `header_params`, `body_mapping`) and `multimodal` are ignored. |
 | `mcp`, `exec`, `client` | Not supported. Each needs a resource the container does not have — an MCP server, a subprocess, or a client on the other end of the connection. |
 
 Tools in an unsupported mode are logged once at startup and left unregistered,

@@ -87,8 +87,9 @@ order:
 
 State lives in the engine's own **Agent Runtime sessions**, not in the runtime
 process, so it survives a restart and is shared across replicas. The engine is
-addressed through `GOOGLE_CLOUD_AGENT_ENGINE_ID`, which the adapter sets on
-deploy.
+addressed through `GOOGLE_CLOUD_AGENT_ENGINE_ID`, which Agent Runtime is expected
+to inject; the adapter does not set it. Without it (or without a project and
+location), the runtime starts with no session storage and logs that it has none.
 
 Omitting the session is still a one-off turn — the behaviour every request had
 before sessions existed — so a caller that does not ask for continuity keeps

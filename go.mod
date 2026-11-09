@@ -5,8 +5,8 @@ go 1.26.0
 require (
 	cloud.google.com/go/aiplatform v1.126.0
 	cloud.google.com/go/storage v1.64.0
-	github.com/AltairaLabs/PromptKit/runtime/v2 v2.18.0
-	github.com/AltairaLabs/PromptKit/sdk/v2 v2.18.0
+	github.com/AltairaLabs/PromptKit/runtime/v2 v2.19.0
+	github.com/AltairaLabs/PromptKit/sdk/v2 v2.19.0
 	github.com/AltairaLabs/promptarena/v2 v2.7.0
 	github.com/googleapis/gax-go/v2 v2.23.0
 	golang.org/x/oauth2 v0.37.0
@@ -25,8 +25,8 @@ require (
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/longrunning v1.2.0 // indirect
 	cloud.google.com/go/monitoring v1.29.0 // indirect
-	github.com/AltairaLabs/PromptKit/pkg/v2 v2.18.0 // indirect
-	github.com/AltairaLabs/PromptKit/server/a2a/v2 v2.18.0 // indirect
+	github.com/AltairaLabs/PromptKit/pkg/v2 v2.19.0 // indirect
+	github.com/AltairaLabs/PromptKit/server/a2a/v2 v2.19.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect

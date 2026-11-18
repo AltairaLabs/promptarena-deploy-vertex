@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/AltairaLabs/promptarena/v2/deploy"
 )
 
 // hashString returns the hex-encoded SHA-256 of s.
@@ -41,6 +43,13 @@ type planConfigFingerprint struct {
 	Bindings             []ResolvedBinding `json:"bindings"`
 	Observability        *Observability    `json:"observability"`
 	ToolSpecs            string            `json:"tool_specs"`
+
+	// Added after the fields above, and omitted when unset, so a deployment
+	// that sets neither keeps the hash it already has. Env was deployed but
+	// never hashed, so a deployment that sets it plans one update after the
+	// upgrade, which applies any env change the old hash missed.
+	Env             map[string]string       `json:"env,omitempty"`
+	RuntimeOverride *deploy.RuntimeOverride `json:"runtime_override,omitempty"`
 }
 
 // hashPlanConfig hashes the deploy-affecting parts of the config, the resolved
@@ -63,6 +72,8 @@ func hashPlanConfig(cfg *Config, resolved []ResolvedBinding, toolSpecs string) (
 		Bindings:             resolved,
 		Observability:        cfg.Observability,
 		ToolSpecs:            toolSpecs,
+		Env:                  cfg.Env,
+		RuntimeOverride:      cfg.RuntimeOverride,
 	}
 
 	encoded, err := json.Marshal(fingerprint)

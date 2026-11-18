@@ -58,7 +58,8 @@ deploy:
         arena_provider: gemini-flash
 ```
 
-`providers` is required. The binding named `default` is the primary provider; if
+`image` is required unless [`runtime_override`](#run-another-container) names
+one. `providers` is required. The binding named `default` is the primary provider; if
 none is named `default`, validation warns and names the binding that will be used.
 Each binding sets **either** `arena_provider` (inheriting type and model from the
 arena config) **or** `type` and `model` inline.
@@ -330,6 +331,88 @@ Then reference the proxied path in your deploy config, for example
 
 This assumes the GHCR package is public. Private packages need upstream
 credentials on the remote repository via Secret Manager, which is not supported yet.
+
+## Run another container
+
+`runtime_override` deploys a container of your choosing in place of
+`vertex-runtime`. The adapter still creates one engine per agent and still sets
+the pack environment (`PROMPTPACK_PACK_JSON` or `PROMPTPACK_PACK_URI`,
+`PROMPTPACK_AGENT` and the rest of [Runtime environment
+variables](#runtime-environment-variables)), so the container can read the pack
+however it was deployed.
+
+| Field | On Agent Runtime |
+|---|---|
+| `image` | Replaces `image`, which may then be left out. Same Artifact Registry rules as the [runtime image](#image) |
+| `env` | Added to the engine's environment. A name may not also appear in `env`, start with `PROMPTPACK_`, or be `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` or `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `secret_env` | Read from Secret Manager when the container starts: `{name, version}`, where `name` is the secret id in the engine's project and `version` defaults to `latest` |
+| `command`, `args` | Refused. Agent Runtime runs an image's own entrypoint and has no way to change it |
+
+Whatever runs must listen on `0.0.0.0:8080`, which Agent Runtime requires of
+every container. Agent Runtime reads a `secret_env` secret as the **Reasoning
+Engine Service Agent**, which needs `roles/secretmanager.secretAccessor` on it:
+
+```bash
+gcloud secrets add-iam-policy-binding <SECRET> --project=<PROJECT> \
+  --member="serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor
+```
+
+Changing any of these fields changes the plan's config hash, so the next apply
+updates the engines.
+
+### Run omnia-dialhome
+
+[omnia-dialhome](https://github.com/AltairaLabs/omnia-dialhome) runs a pack as
+the runtime of an agent in an Omnia workspace: the engine opens one outbound
+connection to the agent's relay and serves its conversations over it, with
+policy, sessions, evals and memory staying in Omnia. It reads the pack and the
+agent from the adapter's `PROMPTPACK_PACK_JSON` and `PROMPTPACK_AGENT`.
+
+1. Make the image pullable through the `ghcr-remote` repository from
+   [Image](#image): `ghcr.io/altairalabs/omnia-dialhome:<version>`.
+2. Put the agent's dial-home key in Secret Manager and grant the service agent
+   access to it, as above. Omnia issues the key and the URL together, in the
+   agent's `<agent>-dial-home-key` Secret (keys `key` and `url`).
+
+   ```bash
+   printf '%s' "$DIAL_HOME_KEY" | gcloud secrets create my-agent-dial-home-key \
+     --project=my-project --data-file=-
+   ```
+
+3. Deploy with the override:
+
+   ```yaml
+   deploy:
+     provider: vertex
+     config:
+       project: my-project
+       location: us-central1
+       service_account: agent-runtime@my-project.iam.gserviceaccount.com
+       providers:
+         - { name: default, role: llm, type: gemini, model: gemini-2.5-flash }
+       runtime_override:
+         image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/omnia-dialhome:v0.1.1
+         env:
+           OMNIA_DIAL_HOME_URL: wss://my-agent-dial-home.example.com/v1/channel
+           OMNIA_DIALHOME_PORT: "8080"
+         secret_env:
+           OMNIA_DIAL_HOME_KEY: { name: my-agent-dial-home-key }
+   ```
+
+`OMNIA_DIALHOME_PORT` makes it answer `/healthz` and `/readyz` on the port
+Agent Runtime expects. `providers` is still required by the adapter, but
+omnia-dialhome takes its model provider from Omnia over the channel and ignores
+`PROMPTPACK_PROVIDERS`.
+
+Two things differ from `vertex-runtime`:
+
+- Conversations arrive through Omnia, over the channel. The engine does not
+  serve the [runtime contract](#runtime-contract)'s query routes.
+- A pack over `pack_inline_limit_bytes` is staged to Cloud Storage, and
+  omnia-dialhome refuses a staged pack. Keep the pack under the limit, or build
+  an image `FROM` omnia-dialhome with the pack copied in and set
+  `OMNIA_DIALHOME_PACK` in `env`.
 
 ## Development
 

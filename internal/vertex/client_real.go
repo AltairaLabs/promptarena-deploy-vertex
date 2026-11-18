@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+
+	"github.com/AltairaLabs/promptarena/v2/deploy"
 )
 
 // realClient talks to Agent Runtime over the v1beta1 API.
@@ -254,7 +256,7 @@ func specToProto(spec *EngineSpec) *aiplatformpb.ReasoningEngine {
 // published protos had no such field, which left the config accepted and
 // silently ignored; the generated client carries it as of aiplatform v1.126.0.
 func deploymentSpecFrom(spec *EngineSpec) *aiplatformpb.ReasoningEngineSpec_DeploymentSpec {
-	if len(spec.Env) == 0 && len(spec.ResourceLimits) == 0 &&
+	if len(spec.Env) == 0 && len(spec.SecretEnv) == 0 && len(spec.ResourceLimits) == 0 &&
 		spec.MinInstances == nil && spec.MaxInstances == nil &&
 		spec.ContainerConcurrency == nil {
 		return nil
@@ -276,6 +278,8 @@ func deploymentSpecFrom(spec *EngineSpec) *aiplatformpb.ReasoningEngineSpec_Depl
 		})
 	}
 
+	out.SecretEnv = secretEnvToProto(spec.SecretEnv)
+
 	if v, ok := toInt32(spec.MinInstances); ok {
 		out.MinInstances = &v
 	}
@@ -288,6 +292,35 @@ func deploymentSpecFrom(spec *EngineSpec) *aiplatformpb.ReasoningEngineSpec_Depl
 
 	return out
 }
+
+// secretEnvToProto converts Secret Manager variables in sorted name order. An
+// unset version means the secret's latest version, which the API spells out.
+func secretEnvToProto(secrets map[string]deploy.SecretRef) []*aiplatformpb.SecretEnvVar {
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]*aiplatformpb.SecretEnvVar, 0, len(names))
+	for _, name := range names {
+		ref := secrets[name]
+		version := ref.Version
+		if version == "" {
+			version = latestSecretVersion
+		}
+		out = append(out, &aiplatformpb.SecretEnvVar{
+			Name:      name,
+			SecretRef: &aiplatformpb.SecretRef{Secret: ref.Name, Version: version},
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// latestSecretVersion is Secret Manager's alias for a secret's newest version.
+const latestSecretVersion = "latest"
 
 // toInt32 narrows an optional int for the proto, reporting false when the value
 // is absent or outside int32. Config validation bounds these well below the

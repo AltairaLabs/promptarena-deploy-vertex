@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/AltairaLabs/promptarena/v2/deploy"
 )
 
 // Environment variable names injected into the runtime container. These must
@@ -65,10 +67,11 @@ func buildEngine(in *engineInput, agent AgentInfo) (built *EngineSpec, errors []
 	spec := &EngineSpec{
 		DisplayName:          agent.Name,
 		Description:          fmt.Sprintf("PromptKit agent %q from pack %q", agent.Name, in.PackID),
-		ImageURI:             in.Cfg.Image,
+		ImageURI:             in.Cfg.image(),
 		ServiceAccount:       in.Cfg.ServiceAccount,
 		Labels:               labels,
 		Env:                  env,
+		SecretEnv:            secretEnv(in.Cfg.RuntimeOverride),
 		ResourceLimits:       resourceLimitsMap(in.Cfg.ResourceLimits),
 		MinInstances:         in.Cfg.MinInstances,
 		MaxInstances:         in.Cfg.MaxInstances,
@@ -122,6 +125,13 @@ func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, 
 		}
 		env[name] = in.Cfg.Env[name]
 	}
+	// The override's variables are validated with the config (reserved names,
+	// no overlap with env), so here they only need adding.
+	if o := in.Cfg.RuntimeOverride; o != nil {
+		for _, name := range sortedKeys(o.Env) {
+			env[name] = o.Env[name]
+		}
+	}
 	if len(errors) > 0 {
 		return nil, errors
 	}
@@ -143,6 +153,14 @@ func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, 
 	}
 	env[envPackURI] = in.StagedPackURI
 	return env, nil
+}
+
+// secretEnv returns the override's Secret Manager variables, or nil.
+func secretEnv(o *deploy.RuntimeOverride) map[string]deploy.SecretRef {
+	if o == nil || len(o.SecretEnv) == 0 {
+		return nil
+	}
+	return o.SecretEnv
 }
 
 // resourceLimitsMap converts the config's limits into the cpu/memory map the

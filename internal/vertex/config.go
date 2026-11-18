@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/AltairaLabs/promptarena/v2/deploy"
+	"github.com/AltairaLabs/promptarena/v2/deploy/adaptersdk"
 )
 
 // Image mode values.
@@ -72,6 +75,31 @@ type Config struct {
 
 	Providers     []ProviderBinding `json:"providers,omitempty"`
 	Observability *Observability    `json:"observability,omitempty"`
+
+	// RuntimeOverride runs another container in place of the runtime image,
+	// with extra environment and Secret Manager variables. The engine still
+	// receives the pack and agent environment it always does. Agent Runtime
+	// takes an image and no command, so command and args are refused.
+	RuntimeOverride *deploy.RuntimeOverride `json:"runtime_override,omitempty"`
+}
+
+// runtimeOverrideSupport is what Agent Runtime can apply of a runtime
+// override. Its container spec carries an image URI and nothing else, so the
+// image's own entrypoint always runs.
+var runtimeOverrideSupport = adaptersdk.RuntimeOverrideSupport{
+	SecretEnv:           true,
+	ReservedEnvPrefixes: []string{envPrefix},
+	// Agent Runtime injects these itself and rejects a create that sets them.
+	// The adapter sets the OTLP endpoint when tracing is on.
+	ReservedEnvNames: []string{"GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", envOTLPEndpoint},
+}
+
+// image is the image the engine runs: the override's, when it names one.
+func (c *Config) image() string {
+	if c.RuntimeOverride != nil && c.RuntimeOverride.Image != "" {
+		return c.RuntimeOverride.Image
+	}
+	return c.Image
 }
 
 // parseConfig unmarshals the provider config JSON and applies defaults.
@@ -81,6 +109,7 @@ func parseConfig(raw string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config JSON: %w", err)
 	}
 	cfg.applyDefaults()
+	cfg.normalizeRuntimeOverride()
 	return &cfg, nil
 }
 
@@ -91,6 +120,22 @@ func (c *Config) applyDefaults() {
 	}
 	if c.PackInlineLimitBytes == 0 {
 		c.PackInlineLimitBytes = DefaultPackInlineLimitBytes
+	}
+}
+
+// normalizeRuntimeOverride gives configs that deploy the same thing the same
+// form, so they hash the same: an empty block is no block, and a secret with
+// no version names the latest one explicitly.
+func (c *Config) normalizeRuntimeOverride() {
+	if c.RuntimeOverride.IsZero() {
+		c.RuntimeOverride = nil
+		return
+	}
+	for name, ref := range c.RuntimeOverride.SecretEnv {
+		if ref.Version == "" {
+			ref.Version = latestSecretVersion
+			c.RuntimeOverride.SecretEnv[name] = ref
+		}
 	}
 }
 
@@ -115,6 +160,7 @@ func (c *Config) validateStructure() []string {
 
 	errs = append(errs, c.validateObservability()...)
 	errs = append(errs, c.validateScaling()...)
+	errs = append(errs, c.validateRuntimeOverride()...)
 
 	return errs
 }
@@ -151,10 +197,11 @@ func (c *Config) validateObservability() []string {
 func (c *Config) validateImageMode() []string {
 	switch c.ImageMode {
 	case ImageModePrebuilt:
-		if c.Image == "" {
+		if c.image() == "" {
 			return []string{
 				"image is required in prebuilt mode: an Artifact Registry reference to " +
-					"the runtime image (an AR remote repository can proxy ghcr.io)",
+					"the runtime image (an AR remote repository can proxy ghcr.io), " +
+					"or runtime_override.image",
 			}
 		}
 	case ImageModeCloudBuild:
@@ -195,4 +242,37 @@ func (c *Config) validateScaling() []string {
 	}
 
 	return errs
+}
+
+// validateRuntimeOverride checks the override against what Agent Runtime can
+// apply, and refuses a variable set both in env and in the override: the two
+// are merged into one environment, and which value won would be an accident.
+func (c *Config) validateRuntimeOverride() []string {
+	o := c.RuntimeOverride
+	if o == nil {
+		return nil
+	}
+	errs := adaptersdk.ValidateRuntimeOverride(o, runtimeOverrideSupport)
+	for _, name := range sortedKeys(o.Env) {
+		if _, dup := c.Env[name]; dup {
+			errs = append(errs, fmt.Sprintf(
+				"runtime_override.env %q is also set in env: set it in one place", name))
+		}
+	}
+	for _, name := range sortedKeys(secretNames(o.SecretEnv)) {
+		if _, dup := c.Env[name]; dup {
+			errs = append(errs, fmt.Sprintf(
+				"runtime_override.secret_env %q is also set in env: set it in one place", name))
+		}
+	}
+	return errs
+}
+
+// secretNames returns the variable names of a secret env map, as a set.
+func secretNames(m map[string]deploy.SecretRef) map[string]string {
+	out := make(map[string]string, len(m))
+	for name := range m {
+		out[name] = ""
+	}
+	return out
 }

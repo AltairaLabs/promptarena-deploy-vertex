@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/storage v1.64.0
 	github.com/AltairaLabs/PromptKit/runtime/v2 v2.21.0
 	github.com/AltairaLabs/PromptKit/sdk/v2 v2.21.0
-	github.com/AltairaLabs/promptarena/v2 v2.7.0
+	github.com/AltairaLabs/promptarena/v2 v2.7.1-0.20261118172401-4abe93a4a3a2
 	github.com/googleapis/gax-go/v2 v2.23.0
 	golang.org/x/oauth2 v0.37.0
 	google.golang.org/api v0.293.0
@@ -111,9 +111,9 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/genproto v0.0.0-20260519071638-aa98bba5eb94 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect

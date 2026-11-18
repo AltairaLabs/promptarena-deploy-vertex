@@ -40,7 +40,7 @@ func (p *Provider) GetProviderInfo(_ context.Context) (*deploy.ProviderInfo, err
 	return &deploy.ProviderInfo{
 		Name:         ProviderName,
 		Version:      Version,
-		Capabilities: []string{"validate", "plan", "apply"},
+		Capabilities: []string{"validate", "plan", "apply", deploy.RuntimeOverrideCapability},
 		ConfigSchema: configSchema,
 	}, nil
 }

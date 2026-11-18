@@ -3,6 +3,8 @@ package vertex
 import (
 	"context"
 	"errors"
+
+	"github.com/AltairaLabs/promptarena/v2/deploy"
 )
 
 // Engine state values reported by Agent Runtime.
@@ -43,7 +45,10 @@ type EngineSpec struct {
 	// Env becomes deploymentSpec.env, which the API models as a list of
 	// name/value pairs; the client performs that conversion in sorted key
 	// order so requests are deterministic.
-	Env                  map[string]string
+	Env map[string]string
+	// SecretEnv becomes deploymentSpec.secretEnv: variables Agent Runtime reads
+	// from Secret Manager when the container starts.
+	SecretEnv            map[string]deploy.SecretRef
 	ResourceLimits       map[string]string
 	MinInstances         *int
 	MaxInstances         *int

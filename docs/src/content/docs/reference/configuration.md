@@ -20,7 +20,7 @@ unknown fields are rejected.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `image_mode` | string | `prebuilt` | Only `prebuilt` is supported. |
-| `image` | string | — | Artifact Registry reference to the runtime image. Required. |
+| `image` | string | — | Artifact Registry reference to the runtime image. Required unless `runtime_override.image` is set. |
 
 :::note[`cloudbuild` is refused]
 `image_mode: cloudbuild` is rejected at plan. Nothing builds the image, and the
@@ -62,6 +62,34 @@ Validation rejects a negative `min_instances`, a `max_instances` below 1, a
 
 Omitting `resource_limits` entirely leaves Google's default; setting the object
 with neither field is treated as unset.
+
+## Environment
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `env` | object of string | — | Additional container environment variables. Values are stored on the engine in plain text. |
+
+Names starting with `PROMPTPACK_` are rejected: the adapter sets them.
+
+## Runtime override
+
+`runtime_override` runs another container in place of the runtime image. The
+adapter still sets the pack environment (`PROMPTPACK_PACK_JSON` or
+`PROMPTPACK_PACK_URI`, `PROMPTPACK_AGENT`), so the container can read the pack.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runtime_override.image` | string | `image` | Image to run instead. Same Artifact Registry rules as `image`. |
+| `runtime_override.env` | object of string | — | Added to the engine's environment. |
+| `runtime_override.secret_env` | object | — | Variables read from Secret Manager at start-up: `{name, version}` per variable, `version` defaulting to `latest`. The Reasoning Engine Service Agent needs `roles/secretmanager.secretAccessor` on each secret. |
+| `runtime_override.command` | array of string | — | Rejected: Agent Runtime runs the image's own entrypoint. |
+| `runtime_override.args` | array of string | — | Rejected, for the same reason. |
+
+Validation rejects an override variable that is also set in `env`, starts with
+`PROMPTPACK_`, or is `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_LOCATION` (Agent
+Runtime sets those itself) or `OTEL_EXPORTER_OTLP_ENDPOINT` (set from
+`observability`), and a `secret_env` entry with no `name`. The
+container must listen on `0.0.0.0:8080`.
 
 ## Labels
 

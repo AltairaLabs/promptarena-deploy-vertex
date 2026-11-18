@@ -1,8 +1,40 @@
 package vertex
 
+import (
+	"encoding/json"
+
+	"github.com/AltairaLabs/promptarena/v2/deploy"
+	"github.com/AltairaLabs/promptarena/v2/deploy/adaptersdk"
+)
+
 // configSchema is the JSON Schema (draft-07) for the vertex provider config.
-// It mirrors Config in config.go and ProviderBinding in bindings.go.
-const configSchema = `{
+// It mirrors Config in config.go and ProviderBinding in bindings.go. The
+// runtime_override block comes from the deploy SDK, so it reads the same in
+// every adapter's schema.
+var configSchema = withRuntimeOverride(baseConfigSchema)
+
+// withRuntimeOverride adds the SDK's runtime_override schema to a config
+// schema. Both inputs are constants of this package, so a failure is a
+// programming error and panics at start-up, where a test sees it.
+func withRuntimeOverride(schema string) string {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(schema), &doc); err != nil {
+		panic("vertex: config schema is not JSON: " + err.Error())
+	}
+	props, ok := doc["properties"].(map[string]any)
+	if !ok {
+		panic("vertex: config schema has no properties")
+	}
+	props[deploy.RuntimeOverrideConfigKey] = adaptersdk.RuntimeOverrideSchema()
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		panic("vertex: config schema does not marshal: " + err.Error())
+	}
+	return string(out)
+}
+
+// baseConfigSchema is the schema for every field the adapter defines itself.
+const baseConfigSchema = `{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "required": ["project", "location", "providers"],
@@ -51,6 +83,11 @@ const configSchema = `{
     "min_instances": { "type": "integer", "minimum": 0 },
     "max_instances": { "type": "integer", "minimum": 1 },
     "container_concurrency": { "type": "integer", "minimum": 1 },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Additional container environment variables; PROMPTPACK_* names are reserved"
+    },
     "labels": {
       "type": "object",
       "additionalProperties": { "type": "string" },

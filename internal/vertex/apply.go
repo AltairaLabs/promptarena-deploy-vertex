@@ -90,7 +90,13 @@ func gatherApplyInput(req *deploy.PlanRequest) (*engineInput, []AgentInfo, *Stat
 // agents have left the pack, and returns the state to persist.
 //
 // State is returned even when the apply fails partway: engines that were
-// created must be recorded, or the next apply orphans them.
+// created must be recorded, or the next apply orphans them. The adapter
+// advertises partial_apply_state, so the CLI saves that state in place of the
+// stored one. It is therefore built from the prior state: every engine the
+// failed apply did not reach, or failed to update, is still recorded.
+//
+// A failure that changed nothing returns prior itself, so Apply can hand back
+// the stored state untouched.
 func applyEngines(
 	ctx context.Context,
 	client gcpClient,
@@ -108,14 +114,10 @@ func applyEngines(
 	}
 	in.StagedPackURI = stagedURI
 
-	next := newState()
+	next := prior.clone()
+	next.Version = StateVersion
 	next.AdapterVersion = Version
-	next.PackHash = in.PackHash
-	next.ConfigHash = in.ConfigHash
 	next.StagedPackURI = in.StagedPackURI
-	for name, engine := range prior.Engines {
-		next.Engines[name] = engine
-	}
 
 	desired := make(map[string]bool, len(agents))
 	for i := range agents {
@@ -129,8 +131,8 @@ func applyEngines(
 
 		engine, err := applyOneEngine(ctx, client, in, agent, prior)
 		if err != nil {
-			delete(next.Engines, agent.Name)
-			return next, fmt.Errorf("agent %q: %w", agent.Name, err)
+			return failedEngineState(next, prior, i, agent.Name, err),
+				fmt.Errorf("agent %q: %w", agent.Name, err)
 		}
 		next.Engines[agent.Name] = EngineState{ResourceName: engine.ResourceName}
 
@@ -138,11 +140,50 @@ func applyEngines(
 			endpointLinks(in.Cfg.Location, engine.ResourceName)...)
 	}
 
+	// Every desired engine now runs this pack and config, so the hashes can
+	// advance. They describe only the desired engines: an engine left over
+	// after a failed delete plans as a delete whatever they say.
+	next.PackHash = in.PackHash
+	next.ConfigHash = in.ConfigHash
+
 	if err := deleteRemoved(ctx, client, next, desired, report); err != nil {
 		return next, err
 	}
 
 	return next, nil
+}
+
+// failedEngineState is the state to return when applying the engine at index
+// failed with err.
+//
+// A prior engine whose update failed still exists, so its entry stays: dropping
+// it would make the next apply create a duplicate and orphan the original. An
+// engine whose creation started but did not finish is recorded as in-flight
+// under the name the provider assigned it.
+//
+// The hashes are cleared rather than kept or advanced. Once any engine may have
+// changed, the engines run a mix of the prior and the new pack, and no single
+// hash describes them: the prior one would hide an updated engine if the
+// author reverted, the new one would hide an engine not yet reached. With no
+// hash, the next plan updates every engine.
+//
+// The first engine's create failing outright changed nothing, so prior itself
+// comes back.
+func failedEngineState(next, prior *State, index int, name string, err error) *State {
+	var creating *engineCreatingError
+	inFlight := errors.As(err, &creating)
+	if inFlight {
+		next.Engines[name] = EngineState{ResourceName: creating.ResourceName, InFlight: true}
+	}
+
+	_, updated := prior.Engines[name]
+	if index == 0 && !updated && !inFlight {
+		return prior
+	}
+
+	next.PackHash = ""
+	next.ConfigHash = ""
+	return next
 }
 
 // applyOneEngine creates or updates a single agent's engine. An engine recorded

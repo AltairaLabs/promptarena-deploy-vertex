@@ -36,11 +36,18 @@ func (p *Provider) newClient(ctx context.Context, cfg *Config) (gcpClient, error
 }
 
 // GetProviderInfo returns metadata about the vertex adapter.
+//
+// partial_apply_state is honest because a failed Apply builds its state from
+// the prior state (see applyEngines): engines it never reached are carried
+// forward, and engines it created are added.
 func (p *Provider) GetProviderInfo(_ context.Context) (*deploy.ProviderInfo, error) {
 	return &deploy.ProviderInfo{
-		Name:         ProviderName,
-		Version:      Version,
-		Capabilities: []string{"validate", "plan", "apply", deploy.RuntimeOverrideCapability},
+		Name:    ProviderName,
+		Version: Version,
+		Capabilities: []string{
+			"validate", "plan", "apply",
+			deploy.RuntimeOverrideCapability, deploy.PartialApplyStateCapability,
+		},
 		ConfigSchema: configSchema,
 	}, nil
 }
@@ -149,7 +156,7 @@ func (p *Provider) Apply(
 		return "", err
 	}
 
-	client, err := newClient(ctx, in.Cfg)
+	client, err := p.newClient(ctx, in.Cfg)
 	if err != nil {
 		return "", err
 	}
@@ -160,6 +167,11 @@ func (p *Provider) Apply(
 	}
 
 	next, applyErr := applyEngines(ctx, client, in, agents, prior, report)
+	if applyErr != nil && next == prior {
+		// Nothing changed. The stored state goes back verbatim, so the CLI
+		// does not record an incomplete apply that did nothing.
+		return req.PriorState, applyErr
+	}
 
 	state, marshalErr := next.Marshal()
 	if marshalErr != nil {

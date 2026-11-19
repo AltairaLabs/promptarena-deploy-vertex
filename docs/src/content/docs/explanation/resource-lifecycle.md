@@ -51,6 +51,28 @@ Because the whole configuration is container environment, an update is an
 environment replacement. There is no partial update: change one label and the
 engine's full desired spec is re-sent.
 
+## Partial failure
+
+An apply that fails partway still returns state, and that state starts from the
+prior state:
+
+- An engine the apply created is recorded.
+- A create that was accepted but did not finish, because the wait timed out or
+  was interrupted, is recorded as in-flight under the name the provider
+  assigned, since the engine may still appear.
+- Every engine the apply did not reach, or failed to update, keeps its entry.
+- The pack and config hashes are cleared. The engines now run a mix of the old
+  and new pack, which no single hash describes, so the next plan updates every
+  engine, including after you revert the change.
+
+A failure that changed nothing, such as the first engine's create being
+refused, returns the stored state unchanged.
+
+Because the state is complete, the adapter advertises the `partial_apply_state`
+capability. A PromptArena CLI that supports it saves the state, marks the apply
+incomplete in `deploy status`, and plans the next apply against it, so an engine
+created before the failure is updated next time instead of created twice.
+
 ## Delete
 
 An engine present in state but whose agent has left the pack is deleted on the

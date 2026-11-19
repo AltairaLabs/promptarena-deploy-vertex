@@ -25,22 +25,31 @@ PromptArena documentation site. Run it standalone with
 ## Releasing
 
 Pushing a `v*` tag runs GoReleaser, which builds the adapter for
-linux/darwin × amd64/arm64 and opens a **draft** release. The assets are bare
+linux/darwin × amd64/arm64 and publishes the release, not a draft
+(`draft: false` in `.goreleaser.yml`): `promptarena deploy adapter install
+vertex` downloads the assets anonymously, and a draft's assets are visible only
+to users with push access. The assets are bare
 binaries named `promptarena-deploy-vertex_<goos>_<goarch>`, which is exactly
-what `promptarena deploy adapter install vertex` downloads — the installer
-builds that name from `runtime.GOOS` and `runtime.GOARCH`, so archives or
-title-cased names would not resolve.
+what the installer downloads — it builds that name from `runtime.GOOS` and
+`runtime.GOARCH`, so archives or title-cased names would not resolve.
 
-Publishing the draft fires `publish-runtime.yml`, which pushes the runtime
-container image to `ghcr.io/altairalabs/promptkit-vertex-runtime` at the same
-tag. That ordering is deliberate: the image is only published once you have
-accepted the release.
+`publish-runtime.yml` pushes the runtime container image to
+`ghcr.io/altairalabs/promptkit-vertex-runtime`. It listens for
+`release: published`, but GoReleaser publishes with the workflow's
+`GITHUB_TOKEN`, and GitHub starts no workflow from an event that token caused.
+So a tag push does not build the image; dispatch it yourself on the tag, so it
+builds the tagged source rather than `main`
+(AltairaLabs/promptarena-deploy-vertex#83 tracks fixing this):
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
-# review the draft release, then publish it to trigger the image build
+git tag vX.Y.Z
+git push origin vX.Y.Z
+# after the Release workflow succeeds, build the runtime image for the same tag
+gh workflow run publish-runtime.yml --ref vX.Y.Z -f tag=vX.Y.Z
 ```
+
+The dispatch also moves `:latest`, so when building several tags, dispatch the
+older ones first.
 
 ## Adapter configuration
 

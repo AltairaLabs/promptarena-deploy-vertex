@@ -5,9 +5,10 @@ version: 2
 
 builds:
   # Only the adapter is released here. cmd/vertex-runtime ships as a container
-  # image instead, published by .github/workflows/publish-runtime.yml when the
-  # release is published — a loose binary would not help anyone, since Agent
-  # Runtime pulls an image.
+  # image instead, built by .github/workflows/publish-runtime.yml. That is
+  # dispatched by hand after a release (see README "Releasing"): a release
+  # published with GITHUB_TOKEN does not trigger it (#83). A loose binary would
+  # not help anyone, since Agent Runtime pulls an image.
   - id: promptarena-deploy-vertex
     binary: promptarena-deploy-vertex
     main: .

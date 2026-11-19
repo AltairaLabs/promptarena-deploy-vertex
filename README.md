@@ -234,6 +234,11 @@ Three inputs drive the diff:
 An engine whose previous creation did not finish is recorded as in-flight and is
 reconciled on the next apply rather than orphaned.
 
+An apply that fails partway returns the full state: the engines it created plus
+every prior engine it did not reach, with the prior hashes. The adapter
+advertises `partial_apply_state`, so a PromptArena CLI that supports it saves
+that state and the next apply picks up where the failed one stopped.
+
 `dry_run` deliberately does **not** affect the config hash — it changes adapter
 behavior, not deployed state.
 

@@ -3,6 +3,7 @@ package vertex
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 )
 
 // StateVersion is the current adapter state schema version. Bump it only for
@@ -95,6 +96,19 @@ func parseState(raw string) (*State, error) {
 	}
 
 	return &s, nil
+}
+
+// clone returns a copy of the state that shares no maps with it, so an apply
+// can build its result from the prior state without mutating it.
+func (s *State) clone() *State {
+	c := *s
+	c.Engines = make(map[string]EngineState, len(s.Engines))
+	maps.Copy(c.Engines, s.Engines)
+	if s.unknown != nil {
+		c.unknown = make(map[string]json.RawMessage, len(s.unknown))
+		maps.Copy(c.unknown, s.unknown)
+	}
+	return &c
 }
 
 // Marshal serializes the state, re-emitting any unknown fields it preserved.

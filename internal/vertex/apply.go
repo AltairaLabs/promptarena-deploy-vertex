@@ -90,7 +90,12 @@ func gatherApplyInput(req *deploy.PlanRequest) (*engineInput, []AgentInfo, *Stat
 // agents have left the pack, and returns the state to persist.
 //
 // State is returned even when the apply fails partway: engines that were
-// created must be recorded, or the next apply orphans them.
+// created must be recorded, or the next apply orphans them. The adapter
+// advertises partial_apply_state, so the CLI saves that state in place of the
+// stored one. It is therefore built from the prior state: every engine the
+// failed apply did not reach, or failed to update, is still recorded, and the
+// pack and config hashes stay at the prior values until every desired engine
+// runs the new ones.
 func applyEngines(
 	ctx context.Context,
 	client gcpClient,
@@ -108,14 +113,10 @@ func applyEngines(
 	}
 	in.StagedPackURI = stagedURI
 
-	next := newState()
+	next := prior.clone()
+	next.Version = StateVersion
 	next.AdapterVersion = Version
-	next.PackHash = in.PackHash
-	next.ConfigHash = in.ConfigHash
 	next.StagedPackURI = in.StagedPackURI
-	for name, engine := range prior.Engines {
-		next.Engines[name] = engine
-	}
 
 	desired := make(map[string]bool, len(agents))
 	for i := range agents {
@@ -129,7 +130,9 @@ func applyEngines(
 
 		engine, err := applyOneEngine(ctx, client, in, agent, prior)
 		if err != nil {
-			delete(next.Engines, agent.Name)
+			// A prior engine whose update failed still exists, so its entry
+			// stays. Dropping it would make the next apply create a duplicate
+			// and orphan the original.
 			return next, fmt.Errorf("agent %q: %w", agent.Name, err)
 		}
 		next.Engines[agent.Name] = EngineState{ResourceName: engine.ResourceName}
@@ -137,6 +140,12 @@ func applyEngines(
 		resource(report, agent.Name, actionFor(prior, agent.Name),
 			endpointLinks(in.Cfg.Location, engine.ResourceName)...)
 	}
+
+	// Every desired engine now runs this pack and config, so the hashes can
+	// advance. They describe only the desired engines: an engine left over
+	// after a failed delete plans as a delete whatever they say.
+	next.PackHash = in.PackHash
+	next.ConfigHash = in.ConfigHash
 
 	if err := deleteRemoved(ctx, client, next, desired, report); err != nil {
 		return next, err

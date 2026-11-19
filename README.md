@@ -33,23 +33,28 @@ binaries named `promptarena-deploy-vertex_<goos>_<goarch>`, which is exactly
 what the installer downloads — it builds that name from `runtime.GOOS` and
 `runtime.GOARCH`, so archives or title-cased names would not resolve.
 
-`publish-runtime.yml` pushes the runtime container image to
-`ghcr.io/altairalabs/promptkit-vertex-runtime`. It listens for
-`release: published`, but GoReleaser publishes with the workflow's
-`GITHUB_TOKEN`, and GitHub starts no workflow from an event that token caused.
-So a tag push does not build the image; dispatch it yourself on the tag, so it
-builds the tagged source rather than `main`
-(AltairaLabs/promptarena-deploy-vertex#83 tracks fixing this):
+Once GoReleaser succeeds, the same Release workflow calls `publish-runtime.yml`,
+which builds the runtime container image from the tag and pushes it to
+`ghcr.io/altairalabs/promptkit-vertex-runtime:vX.Y.Z`. It is called directly
+rather than triggered by `release: published`, because GoReleaser publishes
+with the workflow's `GITHUB_TOKEN` and GitHub starts no workflow from an event
+that token caused.
 
 ```bash
 git tag vX.Y.Z
 git push origin vX.Y.Z
-# after the Release workflow succeeds, build the runtime image for the same tag
-gh workflow run publish-runtime.yml --ref vX.Y.Z -f tag=vX.Y.Z
 ```
 
-The dispatch also moves `:latest`, so when building several tags, dispatch the
-older ones first.
+`:latest` moves only when the tag being built is the newest stable `vX.Y.Z`
+tag, so a prerelease never takes it.
+
+To rebuild or backfill the image for an existing tag, dispatch the workflow. It
+checks out the tag it is given, so it can be dispatched from `main`, and
+rebuilding an older tag leaves `:latest` where it is:
+
+```bash
+gh workflow run publish-runtime.yml -f tag=vX.Y.Z
+```
 
 ## Adapter configuration
 

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 
 	aiplatform "cloud.google.com/go/aiplatform/apiv1beta1"
 	aiplatformpb "cloud.google.com/go/aiplatform/apiv1beta1/aiplatformpb"
@@ -81,12 +82,31 @@ func (c *realClient) CreateEngine(ctx context.Context, spec *EngineSpec) (*Engin
 
 	created, err := op.Wait(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("waiting for engine %q to be created: %w", spec.DisplayName, err)
+		err = fmt.Errorf("waiting for engine %q to be created: %w", spec.DisplayName, err)
+		// The create was accepted, so the engine may exist. Its name is in the
+		// operation's, which is all there is to record it by.
+		if name := engineNameFromOperation(op.Name()); name != "" {
+			return nil, &engineCreatingError{ResourceName: name, err: err}
+		}
+		return nil, err
 	}
 
 	engine := engineFromProto(created)
 	c.attachAgentCard(ctx, engine.ResourceName, spec)
 	return engine, nil
+}
+
+// engineNameFromOperation returns the engine a long-running operation belongs
+// to. Vertex names an engine's operations under it,
+// projects/…/reasoningEngines/<id>/operations/<op>, so the engine is the part
+// before /operations/. Any other shape yields "".
+func engineNameFromOperation(opName string) string {
+	engine, _, found := strings.Cut(opName, "/operations/")
+	if !found || !strings.Contains(engine, "/reasoningEngines/") ||
+		strings.HasSuffix(engine, "/reasoningEngines/") {
+		return ""
+	}
+	return engine
 }
 
 // attachAgentCard sets spec.agentCard on a deployed engine.

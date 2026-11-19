@@ -26,6 +26,126 @@ func (c *updateFailingClient) UpdateEngine(
 	return c.dryRunClient.UpdateEngine(ctx, name, spec)
 }
 
+// creatingClient accepts a create but fails waiting for it, the way the real
+// client reports an interrupted or timed-out long-running operation.
+type creatingClient struct {
+	*dryRunClient
+}
+
+func (c *creatingClient) CreateEngine(_ context.Context, spec *EngineSpec) (*Engine, error) {
+	return nil, &engineCreatingError{
+		ResourceName: "projects/p/locations/us-central1/reasoningEngines/" + spec.DisplayName,
+		err:          context.DeadlineExceeded,
+	}
+}
+
+func partialApplyProvider(client gcpClient) *Provider {
+	p := NewProvider()
+	p.clientFunc = func(context.Context, *Config) (gcpClient, error) { return client, nil }
+	return p
+}
+
+func partialApplyRequest(packJSON, prior string) *deploy.PlanRequest {
+	return &deploy.PlanRequest{
+		PackJSON: packJSON,
+		DeployConfig: `{
+			"project":"p","location":"us-central1",
+			"image":"us-central1-docker.pkg.dev/p/r/i",
+			"providers":[{"name":"default","role":"llm","type":"gemini","model":"m"}]
+		}`,
+		PriorState: prior,
+	}
+}
+
+// A failed apply that changed nothing hands the stored state back verbatim, so
+// the CLI does not record an incomplete apply.
+func TestFailedApplyThatChangedNothingReturnsPriorVerbatim(t *testing.T) {
+	const prior = `{"version":1,"adapter_version":"old","engines":{}}`
+	client := &failingClient{
+		dryRunClient: newDryRunClient(&Config{Project: "p", Location: "us-central1"}),
+		failOn:       "alpha",
+	}
+
+	raw, err := partialApplyProvider(client).Apply(context.Background(),
+		partialApplyRequest(`{"id":"demo","prompts":{"alpha":{},"beta":{}}}`, prior), nil)
+	if err == nil {
+		t.Fatal("Apply succeeded, want alpha's create failure")
+	}
+	if raw != prior {
+		t.Errorf("state = %s, want the prior state verbatim", raw)
+	}
+}
+
+// A create the provider accepted but that did not finish may still produce an
+// engine, so it is recorded as in-flight under its name.
+func TestFailedApplyRecordsAnInterruptedCreateAsInFlight(t *testing.T) {
+	client := &creatingClient{newDryRunClient(&Config{Project: "p", Location: "us-central1"})}
+
+	raw, err := partialApplyProvider(client).Apply(context.Background(),
+		partialApplyRequest(`{"id":"demo","prompts":{"alpha":{}}}`, ""), nil)
+	if err == nil {
+		t.Fatal("Apply succeeded, want the interrupted create")
+	}
+
+	got, parseErr := parseState(raw)
+	if parseErr != nil {
+		t.Fatalf("parseState: %v", parseErr)
+	}
+	want := EngineState{ResourceName: "projects/p/locations/us-central1/reasoningEngines/alpha", InFlight: true}
+	if got.Engines["alpha"] != want {
+		t.Errorf("alpha = %+v, want %+v", got.Engines["alpha"], want)
+	}
+}
+
+// After a failed apply updated one engine, reverting to the prior pack must
+// still plan an update for it: it runs the pack that was reverted away from.
+func TestPlanAfterAFailedApplyUpdatesEveryEngineOnRevert(t *testing.T) {
+	const oldPack = `{"id":"demo","prompts":{"alpha":{},"beta":{}},"v":1}`
+	const newPack = `{"id":"demo","prompts":{"alpha":{},"beta":{}},"v":2}`
+	dry := newDryRunClient(&Config{Project: "p", Location: "us-central1"})
+	p := partialApplyProvider(dry)
+
+	deployed, err := p.Apply(context.Background(), partialApplyRequest(oldPack, ""), nil)
+	if err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	prior, _ := parseState(deployed)
+
+	failing := &updateFailingClient{dryRunClient: dry, failUpdateOf: prior.Engines["beta"].ResourceName}
+	partial, err := partialApplyProvider(failing).Apply(context.Background(), partialApplyRequest(newPack, deployed), nil)
+	if err == nil {
+		t.Fatal("second Apply succeeded, want beta's update failure")
+	}
+	state, _ := parseState(partial)
+
+	agents, _ := enumerateAgents(oldPack)
+	plan := buildPlan(&planInput{
+		Agents: agents, Prior: state,
+		PackHash: hashPack(oldPack), ConfigHash: prior.ConfigHash,
+		Delivery: PackDelivery{Inline: true},
+	})
+	for _, c := range plan.Changes {
+		if c.Action != deploy.ActionUpdate {
+			t.Errorf("%s: action = %s, want update", c.Name, c.Action)
+		}
+	}
+}
+
+func TestEngineNameFromOperation(t *testing.T) {
+	tests := map[string]string{
+		"projects/p/locations/l/reasoningEngines/123/operations/456": "projects/p/locations/l/reasoningEngines/123",
+		"projects/p/locations/l/operations/456":                      "",
+		"projects/p/locations/l/reasoningEngines//operations/456":    "",
+		"projects/p/locations/l/reasoningEngines/123":                "",
+		"": "",
+	}
+	for op, want := range tests {
+		if got := engineNameFromOperation(op); got != want {
+			t.Errorf("engineNameFromOperation(%q) = %q, want %q", op, got, want)
+		}
+	}
+}
+
 func TestGetProviderInfoAdvertisesPartialApplyState(t *testing.T) {
 	info, err := NewProvider().GetProviderInfo(context.Background())
 	if err != nil {
@@ -94,10 +214,11 @@ func TestFailedApplyReturnsPriorEnginesAndCreatedOnes(t *testing.T) {
 		}
 	}
 
-	// beta and gamma still run the prior pack. Advancing the hashes would make
-	// the next plan report them up to date.
-	if got.PackHash != "old-pack" || got.ConfigHash != "old-config" {
-		t.Errorf("hashes = %q/%q, want the prior old-pack/old-config", got.PackHash, got.ConfigHash)
+	// alpha runs the new pack and gamma the old one, so no hash describes them.
+	// The new hash would hide gamma; the prior one would hide alpha if the
+	// author reverted. Cleared, the next plan updates every engine.
+	if got.PackHash != "" || got.ConfigHash != "" {
+		t.Errorf("hashes = %q/%q, want both cleared", got.PackHash, got.ConfigHash)
 	}
 	if got.StagedPackGeneration != 7 {
 		t.Errorf("StagedPackGeneration = %d, want the prior 7", got.StagedPackGeneration)

@@ -167,6 +167,11 @@ func (p *Provider) Apply(
 	}
 
 	next, applyErr := applyEngines(ctx, client, in, agents, prior, report)
+	if applyErr != nil && next == prior {
+		// Nothing changed. The stored state goes back verbatim, so the CLI
+		// does not record an incomplete apply that did nothing.
+		return req.PriorState, applyErr
+	}
 
 	state, marshalErr := next.Marshal()
 	if marshalErr != nil {

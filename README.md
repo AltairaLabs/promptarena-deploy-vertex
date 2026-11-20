@@ -427,8 +427,14 @@ omnia-dialhome takes its model provider from Omnia over the channel and ignores
 
 Two things differ from `vertex-runtime`:
 
-- Conversations arrive through Omnia, over the channel. The engine does not
-  serve the [runtime contract](#runtime-contract)'s query routes.
+- Before omnia-dialhome v0.6.0, conversations arrive only through Omnia, over
+  the channel, and the engine does not serve the
+  [runtime contract](#runtime-contract)'s query routes. From v0.6.0 it serves
+  `:query` and `:streamQuery` too, running each turn itself and having Omnia
+  govern it. The caller puts its identity token in `input.identity_token`,
+  beside `input.message` and `input.session_id`; Omnia verifies it against the
+  issuers the agent's `AgentRuntime` lists under `spec.frontDoor`. The
+  engine's own `Authorization` header is not taken as the caller's identity.
 - A pack over `pack_inline_limit_bytes` is staged to Cloud Storage, and
   omnia-dialhome refuses a staged pack. Keep the pack under the limit, or build
   an image `FROM` omnia-dialhome with the pack copied in and set

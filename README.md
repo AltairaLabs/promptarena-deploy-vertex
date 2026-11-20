@@ -227,7 +227,7 @@ Three inputs drive the diff:
 
 | Input | Effect |
 |---|---|
-| Pack hash | Any pack change updates every engine |
+| Pack hash | Any pack change updates every engine. `compilation.created_at` is ignored, since every compile stamps a new one |
 | Config hash | Project, location, image, service account, scaling, labels and resolved provider bindings |
 | Prior state | Engines absent from state are created; engines whose agent left the pack are deleted |
 

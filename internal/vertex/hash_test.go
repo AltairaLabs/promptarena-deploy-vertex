@@ -24,6 +24,37 @@ func TestHashPack_DistinguishesPacks(t *testing.T) {
 	}
 }
 
+// Every compile stamps a new compilation.created_at. A hash that saw it made
+// every plan update every engine (#87).
+func TestHashPack_IgnoresCompilationCreatedAt(t *testing.T) {
+	first := `{"id":"a","compilation":{"compiled_with":"c","created_at":"2026-11-20T12:35:02Z"}}`
+	second := `{"id":"a","compilation":{"compiled_with":"c","created_at":"2026-11-20T12:35:15Z"}}`
+	if hashPack(first) != hashPack(second) {
+		t.Error("packs differing only in compilation.created_at hashed differently")
+	}
+}
+
+func TestHashPack_SeesOtherCompilationFields(t *testing.T) {
+	first := `{"id":"a","compilation":{"compiled_with":"c1","created_at":"t"}}`
+	second := `{"id":"a","compilation":{"compiled_with":"c2","created_at":"t"}}`
+	if hashPack(first) == hashPack(second) {
+		t.Error("a change to compilation.compiled_with was hidden")
+	}
+}
+
+func TestHashPack_IgnoresKeyOrder(t *testing.T) {
+	if hashPack(`{"id":"a","name":"n"}`) != hashPack(`{"name":"n","id":"a"}`) {
+		t.Error("key order changed the pack hash")
+	}
+}
+
+func TestHashPack_IsBareHex(t *testing.T) {
+	got := hashPack(`{"id":"a"}`)
+	if len(got) != 64 {
+		t.Errorf("hash %q is not 64 hex characters", got)
+	}
+}
+
 func TestHashPlanConfig_StableAcrossCalls(t *testing.T) {
 	cfg := &Config{Project: "p", Location: "us-central1", Image: "img"}
 	resolved := []ResolvedBinding{{Name: "default", Role: RoleLLM, Type: "gemini", Model: "m"}}

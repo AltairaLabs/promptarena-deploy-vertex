@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/AltairaLabs/promptarena/v2/deploy"
 )
@@ -15,11 +16,17 @@ func hashString(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// hashPack hashes the serialized pack. The CLI hands the pack over as JSON text,
-// so the bytes are hashed as received rather than re-serialized — re-encoding
-// could reorder keys and produce a spurious diff.
+// hashPack hashes the pack's content, ignoring compilation.created_at.
+//
+// Every compile stamps a new created_at, so a hash over the raw bytes changed on
+// every plan even when the pack had not: every engine planned as an update, and
+// a staged pack, whose object is named by this hash, was uploaded again on every
+// apply (#87). deploy.PackIdentityChecksum drops that field and re-encodes the
+// pack canonically, with sorted keys, so key order cannot produce a diff either.
+// It is the same identity the CLI uses for pack_checksum. The "sha256:" prefix
+// is dropped so the hash keeps the bare-hex form state has always stored.
 func hashPack(packJSON string) string {
-	return hashString(packJSON)
+	return strings.TrimPrefix(deploy.PackIdentityChecksum([]byte(packJSON)), "sha256:")
 }
 
 // planConfigFingerprint is the subset of config that, when changed, means the

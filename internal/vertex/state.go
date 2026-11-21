@@ -20,6 +20,13 @@ type EngineState struct {
 	// adapter stopped waiting. A later apply reconciles it rather than
 	// orphaning the resource.
 	InFlight bool `json:"in_flight,omitempty"`
+	// ServingRevision is the runtime revision the last apply left serving
+	// (under a candidate split, the stable one). Recorded so a later candidate
+	// deploy keeps the right revision when the split is shared.
+	ServingRevision string `json:"serving_revision,omitempty"`
+	// CandidateRevision is a revision a candidate deploy staged and promote
+	// has not yet served. Empty when nothing is staged.
+	CandidateRevision string `json:"candidate_revision,omitempty"`
 }
 
 // State is the opaque adapter state the CLI persists between operations.

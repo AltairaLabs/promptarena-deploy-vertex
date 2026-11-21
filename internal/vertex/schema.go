@@ -112,6 +112,17 @@ const baseConfigSchema = `{
       "minimum": 1,
       "description": "Serialized pack size above which the pack is staged to GCS"
     },
+    "rollout_stage": {
+      "type": "string",
+      "enum": ["live", "candidate", "promote"],
+      "description": "live (default) serves the new revision; candidate stages it; promote serves the candidate"
+    },
+    "candidate_percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 99,
+      "description": "With rollout_stage candidate: the candidate's share of traffic (default 0)"
+    },
     "dry_run": {
       "type": "boolean",
       "description": "When true, Apply simulates resource creation without calling GCP"

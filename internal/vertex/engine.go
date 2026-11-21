@@ -42,6 +42,7 @@ type engineInput struct {
 	Cfg           *Config
 	PackJSON      string
 	PackID        string
+	PackVersion   string
 	PackHash      string
 	ConfigHash    string
 	Bindings      []ResolvedBinding
@@ -108,6 +109,13 @@ func buildEngineEnv(in *engineInput, agentName string) (vars map[string]string, 
 		envProviders: string(encodedBindings),
 		envProject:   in.Cfg.Project,
 		envLocation:  in.Cfg.Location,
+	}
+
+	// Every revision carries the pack version in its spec, because a revision
+	// has no labels of its own: this is how a revision is told apart by the
+	// version it runs.
+	if in.PackVersion != "" {
+		env[envPackVersion] = in.PackVersion
 	}
 
 	if in.ToolSpecsJSON != "" {

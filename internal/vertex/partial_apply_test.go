@@ -26,6 +26,13 @@ func (c *updateFailingClient) UpdateEngine(
 	return c.dryRunClient.UpdateEngine(ctx, name, spec)
 }
 
+// GetTraffic reports default routing for every engine, including ones the
+// dry-run client never created: the prior state names engines this fake only
+// pretends exist, and the update is where the failure belongs.
+func (c *updateFailingClient) GetTraffic(context.Context, string) (*Traffic, error) {
+	return &Traffic{AlwaysLatest: true}, nil
+}
+
 // creatingClient accepts a create but fails waiting for it, the way the real
 // client reports an interrupted or timed-out long-running operation.
 type creatingClient struct {

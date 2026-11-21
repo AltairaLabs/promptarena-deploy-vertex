@@ -28,6 +28,14 @@ func (c *lifecycleClient) DeleteEngine(_ context.Context, name string) error {
 	return nil
 }
 
+func (c *lifecycleClient) GetTraffic(_ context.Context, _ string) (*Traffic, error) {
+	return &Traffic{AlwaysLatest: true}, nil
+}
+
+func (c *lifecycleClient) ListRevisions(_ context.Context, name string) ([]Revision, error) {
+	return []Revision{{Name: name + "/runtimeRevisions/1", PackVersion: "v1.0.0"}}, nil
+}
+
 func (c *lifecycleClient) GetEngine(_ context.Context, name string) (*Engine, error) {
 	if c.getFailed != nil {
 		return nil, c.getFailed

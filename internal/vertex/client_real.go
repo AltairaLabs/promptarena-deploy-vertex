@@ -33,8 +33,25 @@ type realClient struct {
 	project  string
 	location string
 
-	// httpClient carries the one call the generated client cannot make.
+	// httpClient carries the calls the generated client cannot make.
 	httpClient *http.Client
+	// rest makes the traffic and revision calls, which exist only over REST.
+	rest *trafficREST
+}
+
+// GetTraffic reads an engine's traffic split over REST.
+func (c *realClient) GetTraffic(ctx context.Context, engine string) (*Traffic, error) {
+	return c.rest.getTraffic(ctx, engine)
+}
+
+// SetTraffic replaces an engine's traffic split over REST.
+func (c *realClient) SetTraffic(ctx context.Context, engine string, traffic *Traffic) error {
+	return c.rest.setTraffic(ctx, engine, traffic)
+}
+
+// ListRevisions lists an engine's runtime revisions over REST.
+func (c *realClient) ListRevisions(ctx context.Context, engine string) ([]Revision, error) {
+	return c.rest.listRevisions(ctx, engine)
 }
 
 // cloudPlatformScope is the OAuth scope the Agent Runtime API accepts.
@@ -62,6 +79,7 @@ func newRealClient(ctx context.Context, cfg *Config) (gcpClient, error) {
 		project:    cfg.Project,
 		location:   cfg.Location,
 		httpClient: httpClient,
+		rest:       &trafficREST{http: httpClient, endpoint: agentCardEndpoint(cfg.Location)},
 	}, nil
 }
 

@@ -38,6 +38,7 @@ type AgentInfo struct {
 // tolerant of pack schema growth.
 type packView struct {
 	ID      string                     `json:"id"`
+	Version string                     `json:"version"`
 	Prompts map[string]json.RawMessage `json:"prompts"`
 	Tools   map[string]json.RawMessage `json:"tools"`
 	Agents  *packAgentsView            `json:"agents"`
@@ -108,6 +109,16 @@ func packID(packJSON string) (string, error) {
 		return "", fmt.Errorf("pack has no id")
 	}
 	return pack.ID, nil
+}
+
+// packVersion returns the pack's version field, or "" when it has none.
+// Malformed JSON reports ""; enumerateAgents surfaces the parse error.
+func packVersion(packJSON string) string {
+	pack, err := decodePack(packJSON)
+	if err != nil {
+		return ""
+	}
+	return pack.Version
 }
 
 // hasA2ATools reports whether the pack declares agent-to-agent tools. Those

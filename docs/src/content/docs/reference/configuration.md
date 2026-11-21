@@ -91,6 +91,18 @@ Runtime sets those itself) or `OTEL_EXPORTER_OTLP_ENDPOINT` (set from
 `observability`), and a `secret_env` entry with no `name`. The
 container must listen on `0.0.0.0:8080`.
 
+## Rollout
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `rollout_stage` | `live` \| `candidate` \| `promote` | `live` | `live` serves the new revision at 100%. `candidate` pins the traffic to the revision serving now, then updates the engine, so the new revision is staged without serving. `promote` sends no spec and moves the traffic to the staged candidate. |
+| `candidate_percent` | integer 0–99 | `0` | With `candidate` only: the candidate's share of the traffic. The serving revision keeps the rest. |
+
+Neither field is part of the config hash. Each revision carries the pack's
+`version` as the container variable `PROMPTPACK_VERSION`, which is how you tell
+revisions apart. Changing the engine's Gateway binding archives every revision,
+including a staged candidate.
+
 ## Labels
 
 | Field | Type | Default | Description |

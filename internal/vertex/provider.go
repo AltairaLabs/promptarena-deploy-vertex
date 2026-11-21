@@ -142,6 +142,9 @@ func (p *Provider) Plan(ctx context.Context, req *deploy.PlanRequest) (*deploy.P
 		Delivery:    delivery,
 		HasA2ATools: hasA2ATools(req.PackJSON),
 		Drift:       drift,
+
+		Stage:            cfg.rolloutStage(),
+		CandidatePercent: cfg.candidatePercent(),
 	}), nil
 }
 

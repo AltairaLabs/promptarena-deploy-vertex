@@ -33,11 +33,27 @@ type planInput struct {
 	// changes rather than warnings so they are counted and rendered like
 	// everything else in the plan.
 	Drift []deploy.ResourceChange
+	// Stage and CandidatePercent are the rollout options; Stage is never
+	// empty (live when unset).
+	Stage            string
+	CandidatePercent int
 }
 
 // buildPlan diffs desired against prior state and returns the resource changes.
 // It performs no I/O: everything it needs has already been gathered.
 func buildPlan(in *planInput) *deploy.PlanResponse {
+	if in.Stage == "" {
+		in.Stage = RolloutStageLive
+	}
+	if in.Stage == RolloutStagePromote {
+		changes := planPromote(in)
+		return &deploy.PlanResponse{
+			Changes:  changes,
+			Summary:  summarizeChanges(changes),
+			Warnings: promoteWarnings(in),
+		}
+	}
+
 	// Drift first: each entry explains why the engine below it is being
 	// created rather than updated.
 	changes := append([]deploy.ResourceChange{}, in.Drift...)
@@ -121,20 +137,102 @@ func engineChange(in *planInput, name string) deploy.ResourceChange {
 	}
 
 	if len(reasons) == 0 {
-		return deploy.ResourceChange{
-			Type:   ResTypeAgentRuntime,
-			Name:   name,
-			Action: deploy.ActionNoChange,
-			Detail: "Up to date",
-		}
+		return unchangedEngine(in, name, prior)
 	}
 
 	return deploy.ResourceChange{
 		Type:   ResTypeAgentRuntime,
 		Name:   name,
 		Action: deploy.ActionUpdate,
-		Detail: strings.Join(reasons, ", "),
+		Detail: strings.Join(reasons, ", ") + "; " + trafficIntent(in, prior),
 	}
+}
+
+// unchangedEngine is the change for an engine whose pack and config are as
+// deployed. With a candidate staged it is not a no-op: a live apply serves the
+// candidate, since it is the newest revision and the one this config
+// describes, and a candidate apply sets its share again.
+func unchangedEngine(in *planInput, name string, prior EngineState) deploy.ResourceChange {
+	change := deploy.ResourceChange{
+		Type:   ResTypeAgentRuntime,
+		Name:   name,
+		Action: deploy.ActionNoChange,
+		Detail: "Up to date",
+	}
+	if prior.CandidateRevision == "" {
+		return change
+	}
+	candidate := revisionID(prior.CandidateRevision)
+	change.Action = deploy.ActionUpdate
+	if in.Stage == RolloutStageCandidate {
+		change.Detail = fmt.Sprintf("Up to date; candidate revision %s stays staged at %d%%",
+			candidate, in.CandidatePercent)
+		return change
+	}
+	change.Detail = fmt.Sprintf("Up to date, but candidate revision %s is staged: "+
+		"a live apply serves it at 100%%", candidate)
+	return change
+}
+
+// trafficIntent says where an update leaves the traffic.
+func trafficIntent(in *planInput, prior EngineState) string {
+	if in.Stage != RolloutStageCandidate {
+		return "the new revision serves 100%"
+	}
+	serving := revisionPhrase(prior.ServingRevision)
+	if in.CandidatePercent > 0 {
+		return fmt.Sprintf("stage the new revision as a candidate at %d%%, %s keeps %d%%",
+			in.CandidatePercent, serving, fullPercent-in.CandidatePercent)
+	}
+	return fmt.Sprintf("stage the new revision as a candidate at 0%%, %s keeps 100%%", serving)
+}
+
+// revisionPhrase names a recorded revision in a plan, or the serving revision
+// generically when none was recorded.
+func revisionPhrase(name string) string {
+	if name == "" {
+		return "the serving revision"
+	}
+	return "revision " + revisionID(name)
+}
+
+// planPromote produces one change per agent: its traffic moving to the staged
+// candidate. An agent with nothing staged is reported as such, and apply
+// refuses it.
+func planPromote(in *planInput) []deploy.ResourceChange {
+	changes := make([]deploy.ResourceChange, 0, len(in.Agents))
+	for i := range in.Agents {
+		name := in.Agents[i].Name
+		entry := in.Prior.Engines[name]
+		if entry.CandidateRevision == "" {
+			changes = append(changes, deploy.ResourceChange{
+				Type:   ResTypeAgentRuntime,
+				Name:   name,
+				Action: deploy.ActionNoChange,
+				Detail: "No staged candidate to promote; apply refuses until one is staged",
+			})
+			continue
+		}
+		from := revisionPhrase(entry.ServingRevision)
+		changes = append(changes, deploy.ResourceChange{
+			Type:   ResTypeAgentRuntime,
+			Name:   name,
+			Action: deploy.ActionUpdate,
+			Detail: fmt.Sprintf("Promote candidate revision %s to 100%% of traffic (from %s)",
+				revisionID(entry.CandidateRevision), from),
+		})
+	}
+	return changes
+}
+
+// promoteWarnings flags a promote whose pack or config differs from what was
+// staged: promote serves the staged revision, not the current files.
+func promoteWarnings(in *planInput) []string {
+	if in.Prior.PackHash == in.PackHash && in.Prior.ConfigHash == in.ConfigHash {
+		return nil
+	}
+	return []string{"the pack or config changed since the candidate was staged; promote " +
+		"serves the staged candidate as it was deployed, not the current pack"}
 }
 
 // planWarnings returns advisories about a plan that will apply cleanly but may

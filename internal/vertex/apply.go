@@ -73,14 +73,15 @@ func gatherApplyInput(req *deploy.PlanRequest) (*engineInput, []AgentInfo, *Stat
 	}
 
 	return &engineInput{
-		Cfg:        cfg,
-		PackJSON:   req.PackJSON,
-		PackID:     id,
-		PackHash:   hashPack(req.PackJSON),
-		ConfigHash: configHash,
-		Bindings:   resolved,
-		Delivery:   decidePackDelivery(req.PackJSON, cfg),
-		AgentCards: cards,
+		Cfg:         cfg,
+		PackJSON:    req.PackJSON,
+		PackID:      id,
+		PackVersion: packVersion(req.PackJSON),
+		PackHash:    hashPack(req.PackJSON),
+		ConfigHash:  configHash,
+		Bindings:    resolved,
+		Delivery:    decidePackDelivery(req.PackJSON, cfg),
+		AgentCards:  cards,
 
 		ToolSpecsJSON: toolSpecs,
 	}, agents, prior, nil
@@ -105,6 +106,12 @@ func applyEngines(
 	prior *State,
 	report *adaptersdk.ProgressReporter,
 ) (*State, error) {
+	// Promote changes only the routing: no pack is staged, no spec is sent and
+	// no engine is created or deleted.
+	if in.Cfg.rolloutStage() == RolloutStagePromote {
+		return promoteEngines(ctx, client, in.Cfg.Location, agents, prior, report)
+	}
+
 	// Stage before building any engine spec: a non-inline pack has no usable
 	// spec until its URI exists, so a failure here should stop the deploy
 	// rather than surface once per engine.
@@ -129,12 +136,17 @@ func applyEngines(
 		progress(report, fmt.Sprintf("Deploying %s", agent.Name),
 			float64(i)/float64(len(agents))*applyProgressSpan)
 
-		engine, err := applyOneEngine(ctx, client, in, agent, prior)
+		engine, entry, err := applyOneEngine(ctx, client, in, agent, prior)
 		if err != nil {
+			// An engine that was updated before the failure is recorded as it
+			// now is, rather than as prior state remembered it.
+			if entry.ResourceName != "" {
+				next.Engines[agent.Name] = entry
+			}
 			return failedEngineState(next, prior, i, agent.Name, err),
 				fmt.Errorf("agent %q: %w", agent.Name, err)
 		}
-		next.Engines[agent.Name] = EngineState{ResourceName: engine.ResourceName}
+		next.Engines[agent.Name] = entry
 
 		resource(report, agent.Name, actionFor(prior, agent.Name),
 			endpointLinks(in.Cfg.Location, engine.ResourceName)...)
@@ -186,30 +198,53 @@ func failedEngineState(next, prior *State, index int, name string, err error) *S
 	return next
 }
 
-// applyOneEngine creates or updates a single agent's engine. An engine recorded
-// in prior state but absent from the provider is recreated rather than failing:
-// state can outlive the resource.
+// applyOneEngine creates or updates a single agent's engine and returns the
+// state entry to record for it. An engine recorded in prior state but absent
+// from the provider is recreated rather than failing: state can outlive the
+// resource.
+//
+// An update follows the rollout stage: live serves the new revision, candidate
+// stages it behind the revision that was serving.
 func applyOneEngine(
 	ctx context.Context, client gcpClient, in *engineInput, agent AgentInfo, prior *State,
-) (*Engine, error) {
+) (*Engine, EngineState, error) {
 	spec, errs := buildEngine(in, agent)
 	if len(errs) != 0 {
-		return nil, fmt.Errorf("build engine spec: %v", errs)
+		return nil, EngineState{}, fmt.Errorf("build engine spec: %v", errs)
 	}
 
 	existing, recorded := prior.Engines[agent.Name]
 	if !recorded || existing.ResourceName == "" {
-		return client.CreateEngine(ctx, spec)
+		return createEngine(ctx, client, spec)
 	}
 
-	engine, err := client.UpdateEngine(ctx, existing.ResourceName, spec)
-	if errors.Is(err, ErrEngineNotFound) {
-		return client.CreateEngine(ctx, spec)
+	var (
+		engine *Engine
+		entry  EngineState
+		err    error
+	)
+	switch {
+	case in.Cfg.rolloutStage() == RolloutStageCandidate && candidateIsCurrent(in, prior, existing):
+		engine, entry, err = restageShare(ctx, client, existing, in.Cfg.candidatePercent())
+	case in.Cfg.rolloutStage() == RolloutStageCandidate:
+		engine, entry, err = stageCandidate(ctx, client, existing, spec, in.Cfg.candidatePercent())
+	default:
+		engine, entry, err = updateLive(ctx, client, existing, spec)
+	}
+	if entry.ResourceName == "" && errors.Is(err, ErrEngineNotFound) {
+		return createEngine(ctx, client, spec)
 	}
 	if err != nil {
-		return nil, err
+		return nil, entry, err
 	}
-	return engine, nil
+	return engine, entry, nil
+}
+
+// candidateIsCurrent reports whether the staged candidate already runs this
+// pack and config, so re-staging needs no spec update.
+func candidateIsCurrent(in *engineInput, prior *State, existing EngineState) bool {
+	return existing.CandidateRevision != "" && existing.ServingRevision != "" &&
+		in.PackHash != "" && prior.PackHash == in.PackHash && prior.ConfigHash == in.ConfigHash
 }
 
 // deleteRemoved deletes engines whose agents are no longer in the pack.

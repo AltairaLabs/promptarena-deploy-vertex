@@ -81,6 +81,32 @@ type Config struct {
 	// receives the pack and agent environment it always does. Agent Runtime
 	// takes an image and no command, so command and args are refused.
 	RuntimeOverride *deploy.RuntimeOverride `json:"runtime_override,omitempty"`
+
+	// RolloutStage decides what an apply does with the engine's traffic:
+	// live (the default) serves the new revision at once, candidate stages it
+	// without serving it, and promote moves the traffic to the staged
+	// candidate without changing anything else.
+	RolloutStage string `json:"rollout_stage,omitempty"`
+	// CandidatePercent gives a staged candidate this share of the traffic, the
+	// revision that was serving keeping the rest. Zero, the default, stages
+	// the candidate with no traffic at all.
+	CandidatePercent *int `json:"candidate_percent,omitempty"`
+}
+
+// rolloutStage is the configured stage, live when unset.
+func (c *Config) rolloutStage() string {
+	if c.RolloutStage == "" {
+		return RolloutStageLive
+	}
+	return c.RolloutStage
+}
+
+// candidatePercent is the configured candidate share, zero when unset.
+func (c *Config) candidatePercent() int {
+	if c.CandidatePercent == nil {
+		return 0
+	}
+	return *c.CandidatePercent
 }
 
 // runtimeOverrideSupport is what Agent Runtime can apply of a runtime
@@ -161,6 +187,7 @@ func (c *Config) validateStructure() []string {
 	errs = append(errs, c.validateObservability()...)
 	errs = append(errs, c.validateScaling()...)
 	errs = append(errs, c.validateRuntimeOverride()...)
+	errs = append(errs, c.validateRollout()...)
 
 	return errs
 }
@@ -264,6 +291,32 @@ func (c *Config) validateRuntimeOverride() []string {
 			errs = append(errs, fmt.Sprintf(
 				"runtime_override.secret_env %q is also set in env: set it in one place", name))
 		}
+	}
+	return errs
+}
+
+// validateRollout checks rollout_stage and candidate_percent. A share is
+// refused outside a candidate deploy rather than ignored: set on a live or
+// promote apply it would describe a split that apply never makes.
+func (c *Config) validateRollout() []string {
+	var errs []string
+	switch c.rolloutStage() {
+	case RolloutStageLive, RolloutStageCandidate, RolloutStagePromote:
+	default:
+		errs = append(errs, fmt.Sprintf("rollout_stage %q must be %q, %q or %q",
+			c.RolloutStage, RolloutStageLive, RolloutStageCandidate, RolloutStagePromote))
+	}
+	if c.CandidatePercent == nil {
+		return errs
+	}
+	if *c.CandidatePercent < 0 || *c.CandidatePercent >= fullPercent {
+		errs = append(errs, fmt.Sprintf(
+			"candidate_percent %d must be from 0 to 99: promote the candidate to give it all the traffic",
+			*c.CandidatePercent))
+	}
+	if c.rolloutStage() != RolloutStageCandidate {
+		errs = append(errs, fmt.Sprintf(
+			"candidate_percent applies only with rollout_stage %q", RolloutStageCandidate))
 	}
 	return errs
 }

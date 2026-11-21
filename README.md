@@ -230,6 +230,7 @@ Three inputs drive the diff:
 | Pack hash | Any pack change updates every engine. `compilation.created_at` is ignored, since every compile stamps a new one |
 | Config hash | Project, location, image, service account, scaling, labels and resolved provider bindings |
 | Prior state | Engines absent from state are created; engines whose agent left the pack are deleted |
+| `rollout_stage` | Each update's detail says where the traffic goes. `promote` plans a traffic change per engine and nothing else |
 
 An engine whose previous creation did not finish is recorded as in-flight and is
 reconciled on the next apply rather than orphaned.
@@ -250,6 +251,74 @@ Cloud Storage instead of an environment variable, which appears in the plan as a
 `plan` warns, without failing, when a pack declares `a2a__` tools (agent-to-agent
 calls are not wired yet) or when a multi-agent pack will deploy as independent
 engines with no routing between them.
+
+## Staged rollouts
+
+Each apply that changes an engine's spec creates a new Agent Runtime **runtime
+revision**. Revisions are immutable, and the engine's traffic configuration
+decides which of them serve its `:query` and `:streamQuery`. By default every
+request goes to the latest revision, so a deploy serves the new version as soon
+as it is ready. `rollout_stage` stages a version first and moves the traffic as
+a separate step.
+
+| `rollout_stage` | What apply does |
+|---|---|
+| `live` (default) | Updates the engine and serves the new revision at 100%. An engine left on a manual split has the split moved to the new revision. |
+| `candidate` | Pins the traffic to the revision serving now at 100%, **then** updates the engine. The new revision is staged with 0% (or `candidate_percent`) and recorded in state as the candidate. |
+| `promote` | Sends no spec. Moves 100% of the traffic to the staged candidate. Refused when nothing is staged. |
+
+```yaml
+deploy:
+  provider: vertex
+  config:
+    project: my-project
+    location: us-central1
+    image: us-central1-docker.pkg.dev/my-project/ghcr-remote/altairalabs/promptkit-vertex-runtime
+    rollout_stage: candidate   # then: promote
+    candidate_percent: 10      # optional: 10% to the candidate, 90% stays
+    providers:
+      - name: default
+        type: gemini
+        model: gemini-2.5-flash
+```
+
+A typical sequence: apply with `candidate`, call the candidate directly at
+`https://<location>-aiplatform.googleapis.com/v1beta1/<engine>/runtimeRevisions/<id>:query`
+(the same request body as the engine's `:query`), then apply with `promote`.
+`rollout_stage` and `candidate_percent` are not part of the config hash, so
+switching between them does not make plan report a config change. A promote
+serves the candidate exactly as it was staged. If the pack or config changed
+after it was staged, plan warns you.
+
+The first deploy of an engine has nothing else to serve, so its first revision
+takes the traffic whatever the stage.
+
+**Identifying a revision.** A runtime revision has no labels, only its name,
+spec, create time and state. So the adapter writes the pack's `version` into
+every revision's spec as the container variable `PROMPTPACK_VERSION`. To read it
+back, look for `spec.deploymentSpec.env[name=PROMPTPACK_VERSION]` on
+`GET v1beta1/<engine>/runtimeRevisions`. `status` reports the live split with
+each revision's pack version, for example
+`traffic: 1 (v1.0.0) 100%; staged candidate 2 (v1.1.0)`.
+
+Things to know:
+
+- Traffic splitting and runtime revisions are a **preview** feature of the
+  v1beta1 API. The published Go client does not model them, so the adapter makes
+  these calls over REST with the same credentials.
+- A revision with 0% of the traffic still answers when it is called directly,
+  and it is not free. In testing a staged candidate kept one warm instance, not
+  `min_instances`. The revision a promote took the traffic from kept its
+  `min_instances` running. Agent Runtime garbage-collects revisions with no
+  traffic only beyond the engine's retention count. A candidate replaced by a
+  newer candidate is deleted by the adapter. Delete a revision you no longer
+  want to roll back to with
+  `DELETE https://<location>-aiplatform.googleapis.com/v1beta1/<engine>/runtimeRevisions/<id>`.
+- Every spec update creates a revision, even one identical to the last. So
+  re-applying an unchanged candidate sets its share without sending the spec.
+- **Changing an engine's Gateway binding archives every revision.** That
+  includes the staged candidate, so promote has nothing to move to afterwards.
+  Do not change the binding while a candidate is staged.
 
 ## Runtime contract
 
@@ -283,6 +352,7 @@ turn fails after streaming has begun, the failure arrives as a trailing
 | `PROMPTPACK_AGENT` | Which agent to serve; defaults to `agents.entry` or the pack's single prompt |
 | `PROMPTPACK_PROVIDERS` | JSON list of resolved provider bindings |
 | `PROMPTPACK_TOOL_SPECS` | JSON map of tool name to execution config; absent when the arena declares no tools |
+| `PROMPTPACK_VERSION` | The pack's `version`. The runtime does not read it; it is there so each runtime revision records which pack version it runs. Absent when the pack has no version |
 | `GOOGLE_CLOUD_PROJECT` | GCP project for Vertex model routing |
 | `GOOGLE_CLOUD_LOCATION` | GCP region for Vertex model routing |
 | `GOOGLE_CLOUD_AGENT_ENGINE_ID` | The engine's own ID, which addresses its sessions. Expected from Agent Runtime, not set by the adapter; without it, session storage is off |

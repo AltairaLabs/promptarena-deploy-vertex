@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"time"
 )
 
 // dryRunIDLen is how many hex characters of the display-name hash form a
@@ -18,15 +19,22 @@ type dryRunClient struct {
 	project  string
 	location string
 	engines  map[string]Engine
+	// revisions and traffic simulate runtime revisions: every create or
+	// update adds one, and traffic starts on always-latest, as Agent Runtime's
+	// does.
+	revisions map[string][]Revision
+	traffic   map[string]*Traffic
 }
 
 // newDryRunClient creates a dry-run client scoped to the config's project and
 // location.
 func newDryRunClient(cfg *Config) *dryRunClient {
 	return &dryRunClient{
-		project:  cfg.Project,
-		location: cfg.Location,
-		engines:  map[string]Engine{},
+		project:   cfg.Project,
+		location:  cfg.Location,
+		engines:   map[string]Engine{},
+		revisions: map[string][]Revision{},
+		traffic:   map[string]*Traffic{},
 	}
 }
 
@@ -47,6 +55,7 @@ func (c *dryRunClient) CreateEngine(_ context.Context, spec *EngineSpec) (*Engin
 		State:        EngineStateActive,
 	}
 	c.engines[engine.ResourceName] = engine
+	c.addRevision(engine.ResourceName, spec)
 	return &engine, nil
 }
 
@@ -64,6 +73,7 @@ func (c *dryRunClient) UpdateEngine(
 		State:        EngineStateActive,
 	}
 	c.engines[name] = engine
+	c.addRevision(name, spec)
 	return &engine, nil
 }
 
@@ -80,6 +90,8 @@ func (c *dryRunClient) GetEngine(_ context.Context, name string) (*Engine, error
 // matching the real client's idempotent delete.
 func (c *dryRunClient) DeleteEngine(_ context.Context, name string) error {
 	delete(c.engines, name)
+	delete(c.revisions, name)
+	delete(c.traffic, name)
 	return nil
 }
 
@@ -115,4 +127,53 @@ func labelsMatch(have, want map[string]string) bool {
 // caller derives is deterministic, and no bytes move.
 func (c *dryRunClient) StageObject(_ context.Context, _ string, _ []byte) error {
 	return nil
+}
+
+// addRevision records the revision a create or update produces.
+func (c *dryRunClient) addRevision(engine string, spec *EngineSpec) {
+	n := len(c.revisions[engine]) + 1
+	c.revisions[engine] = append(c.revisions[engine], Revision{
+		Name:        fmt.Sprintf("%s/runtimeRevisions/%d", engine, n),
+		State:       EngineStateActive,
+		CreateTime:  time.Unix(int64(n), 0).UTC(),
+		PackVersion: spec.Env[envPackVersion],
+	})
+}
+
+// GetTraffic returns the simulated split, always-latest until one is set.
+func (c *dryRunClient) GetTraffic(_ context.Context, engine string) (*Traffic, error) {
+	if _, ok := c.engines[engine]; !ok {
+		return nil, fmt.Errorf("%s: %w", engine, ErrEngineNotFound)
+	}
+	if t, ok := c.traffic[engine]; ok {
+		return t, nil
+	}
+	return &Traffic{AlwaysLatest: true}, nil
+}
+
+// SetTraffic records the simulated split. Each dry run starts with no
+// engines, so an engine known only from prior state is accepted too: a dry-run
+// promote is a traffic change on an engine this client never saw.
+func (c *dryRunClient) SetTraffic(_ context.Context, engine string, traffic *Traffic) error {
+	c.traffic[engine] = traffic
+	return nil
+}
+
+// DeleteRevision removes a simulated revision.
+func (c *dryRunClient) DeleteRevision(_ context.Context, revision string) error {
+	for engine, revs := range c.revisions {
+		kept := revs[:0]
+		for _, r := range revs {
+			if r.Name != revision {
+				kept = append(kept, r)
+			}
+		}
+		c.revisions[engine] = kept
+	}
+	return nil
+}
+
+// ListRevisions returns the simulated revisions.
+func (c *dryRunClient) ListRevisions(_ context.Context, engine string) ([]Revision, error) {
+	return append([]Revision(nil), c.revisions[engine]...), nil
 }

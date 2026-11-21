@@ -235,13 +235,36 @@ func engineStatus(
 
 	if live.State == EngineStateActive {
 		status.Status = ResourceHealthy
-		status.Detail = engine.ResourceName
+		status.Detail = engine.ResourceName + "; traffic: " + liveTraffic(ctx, client, engine)
 		return status
 	}
 
 	status.Status = ResourceUnhealthy
 	status.Detail = fmt.Sprintf("Engine state is %s", live.State)
 	return status
+}
+
+// liveTraffic describes the engine's split as the provider reports it, naming
+// the pack version each revision runs and the staged candidate. A failed read
+// says so instead of failing status: the engine itself was found.
+func liveTraffic(ctx context.Context, client gcpClient, engine EngineState) string {
+	traffic, err := client.GetTraffic(ctx, engine.ResourceName)
+	if err != nil {
+		return fmt.Sprintf("unavailable (%v)", err)
+	}
+	revs, err := client.ListRevisions(ctx, engine.ResourceName)
+	if err != nil {
+		revs = nil
+	}
+	out := describeTraffic(traffic, revs)
+	if engine.CandidateRevision != "" {
+		versions := make(map[string]string, len(revs))
+		for _, r := range revs {
+			versions[r.Name] = r.PackVersion
+		}
+		out += "; staged candidate " + revisionLabel(engine.CandidateRevision, versions)
+	}
+	return out
 }
 
 // aggregateStatus rolls the per-engine health up into one deployment status.

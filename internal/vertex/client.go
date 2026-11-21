@@ -81,4 +81,16 @@ type gcpClient interface {
 	// engine: the two are one operation from the caller's side, and splitting
 	// them would mean two factories and two dry-run fakes for one deploy.
 	StageObject(ctx context.Context, uri string, data []byte) error
+
+	// GetTraffic reads how an engine's requests are split across its runtime
+	// revisions.
+	GetTraffic(ctx context.Context, engine string) (*Traffic, error)
+	// SetTraffic replaces the split and waits for it to take effect. It
+	// changes only the routing, so it creates no revision.
+	SetTraffic(ctx context.Context, engine string, traffic *Traffic) error
+	// ListRevisions returns every runtime revision of an engine.
+	ListRevisions(ctx context.Context, engine string) ([]Revision, error)
+	// DeleteRevision deletes one runtime revision and waits for it. The
+	// revision must have no traffic.
+	DeleteRevision(ctx context.Context, revision string) error
 }

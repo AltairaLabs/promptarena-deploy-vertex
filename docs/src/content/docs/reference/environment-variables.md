@@ -17,6 +17,11 @@ environment. This is the full set.
 | `PROMPTPACK_TOOL_SPECS` | Arena `tool_specs` | Arena declares tool specs |
 | `PROMPTPACK_TRACING_ENABLED` | `observability.tracing_enabled` | Tracing enabled |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `observability.otlp_endpoint` | Tracing enabled |
+| `PROMPTPACK_VERSION` | The pack's `version` | The pack has a version |
+
+`PROMPTPACK_VERSION` is not read by the runtime. It is in the spec so that every
+runtime revision records the pack version it runs, because a revision has no
+labels of its own.
 
 Exactly one of `PROMPTPACK_PACK_JSON` or `PROMPTPACK_PACK_URI` is set; the
 runtime requires one of them and fails to start without either.

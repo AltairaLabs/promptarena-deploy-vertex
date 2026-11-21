@@ -151,12 +151,25 @@ func (c *dryRunClient) GetTraffic(_ context.Context, engine string) (*Traffic, e
 	return &Traffic{AlwaysLatest: true}, nil
 }
 
-// SetTraffic records the simulated split.
+// SetTraffic records the simulated split. Each dry run starts with no
+// engines, so an engine known only from prior state is accepted too: a dry-run
+// promote is a traffic change on an engine this client never saw.
 func (c *dryRunClient) SetTraffic(_ context.Context, engine string, traffic *Traffic) error {
-	if _, ok := c.engines[engine]; !ok {
-		return fmt.Errorf("%s: %w", engine, ErrEngineNotFound)
-	}
 	c.traffic[engine] = traffic
+	return nil
+}
+
+// DeleteRevision removes a simulated revision.
+func (c *dryRunClient) DeleteRevision(_ context.Context, revision string) error {
+	for engine, revs := range c.revisions {
+		kept := revs[:0]
+		for _, r := range revs {
+			if r.Name != revision {
+				kept = append(kept, r)
+			}
+		}
+		c.revisions[engine] = kept
+	}
 	return nil
 }
 

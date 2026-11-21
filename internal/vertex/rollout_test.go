@@ -366,3 +366,155 @@ func TestPlanDescribesTheRollout(t *testing.T) {
 		t.Error("a promote after the pack changed should warn that the staged pack is what serves")
 	}
 }
+
+// failAfterUpdate fails the revision listing that follows an update.
+type failAfterUpdate struct {
+	*rolloutClient
+	updated bool
+}
+
+func (c *failAfterUpdate) UpdateEngine(ctx context.Context, name string, spec *EngineSpec) (*Engine, error) {
+	c.updated = true
+	return c.rolloutClient.UpdateEngine(ctx, name, spec)
+}
+
+func (c *failAfterUpdate) ListRevisions(ctx context.Context, name string) ([]Revision, error) {
+	if c.updated {
+		return nil, errors.New("list failed")
+	}
+	return c.rolloutClient.ListRevisions(ctx, name)
+}
+
+// A candidate staged earlier is no longer what the spec describes once a new
+// update has landed, so a failure after the update must drop it from state:
+// otherwise the next promote serves the stale version.
+func TestAFailureAfterTheUpdateDropsTheStaleCandidate(t *testing.T) {
+	base := newRolloutClient()
+	agents := []AgentInfo{{Name: "assistant"}}
+	staged, err := applyEngines(context.Background(), base, rolloutInput(RolloutStageCandidate, nil, "v2"),
+		agents, deployed(t, base), nil)
+	if err != nil {
+		t.Fatalf("candidate: %v", err)
+	}
+
+	for _, stage := range []string{RolloutStageCandidate, RolloutStageLive} {
+		c := &failAfterUpdate{rolloutClient: base}
+		got, err := applyEngines(context.Background(), c, rolloutInput(stage, nil, "v3"), agents, staged, nil)
+		if err == nil {
+			t.Fatalf("%s: want the listing failure", stage)
+		}
+		entry := got.Engines["assistant"]
+		if entry.CandidateRevision != "" || entry.ResourceName == "" {
+			t.Errorf("%s: entry = %+v, want the engine kept and no candidate", stage, entry)
+		}
+		if got.PackHash != "" {
+			t.Errorf("%s: hashes must be cleared after a partial apply", stage)
+		}
+	}
+}
+
+// Re-staging with a share sets the split once, after the update, so the
+// candidate never drops to 0% in between.
+func TestRestagingKeepsTheCandidateShare(t *testing.T) {
+	c := newRolloutClient()
+	agents := []AgentInfo{{Name: "assistant"}}
+	first, err := applyEngines(context.Background(), c, rolloutInput(RolloutStageCandidate, intPtr(10), "v2"),
+		agents, deployed(t, c), nil)
+	if err != nil {
+		t.Fatalf("first candidate: %v", err)
+	}
+	c.calls = nil
+	if _, err := applyEngines(context.Background(), c, rolloutInput(RolloutStageCandidate, intPtr(10), "v3"),
+		agents, first, nil); err != nil {
+		t.Fatalf("second candidate: %v", err)
+	}
+	if want := "update,traffic:1 90%, 3 10%"; strings.Join(c.calls, ",") != want {
+		t.Errorf("calls = %v, want %q", c.calls, want)
+	}
+}
+
+func TestNewestSkipsRevisionsThatCannotServe(t *testing.T) {
+	revs := []Revision{{Name: "e/runtimeRevisions/1", State: "ACTIVE"}, {Name: "e/runtimeRevisions/2", State: "FAILED"}}
+	got, err := servingRevision(&Traffic{AlwaysLatest: true}, revs, "")
+	if err != nil || got != "e/runtimeRevisions/1" {
+		t.Errorf("got %q, %v; want the active revision", got, err)
+	}
+}
+
+// Each dry run starts empty, so promote must work on an engine known only from
+// prior state.
+func TestDryRunPromote(t *testing.T) {
+	prior := newState()
+	prior.Engines["assistant"] = EngineState{ResourceName: "e", CandidateRevision: "e/runtimeRevisions/2"}
+	got, err := applyEngines(context.Background(), newDryRunClient(&Config{}),
+		rolloutInput(RolloutStagePromote, nil, ""), []AgentInfo{{Name: "assistant"}}, prior, nil)
+	if err != nil || got.Engines["assistant"].ServingRevision != "e/runtimeRevisions/2" {
+		t.Errorf("got %+v, %v", got.Engines, err)
+	}
+}
+
+func TestPlanShowsALiveApplyServingAStagedCandidate(t *testing.T) {
+	prior := newState()
+	prior.PackHash, prior.ConfigHash = "p", "c"
+	prior.Engines["assistant"] = EngineState{ResourceName: "e", CandidateRevision: "e/runtimeRevisions/5"}
+	in := &planInput{
+		Agents: []AgentInfo{{Name: "assistant"}}, Prior: prior,
+		PackHash: "p", ConfigHash: "c", Delivery: PackDelivery{Inline: true}, Stage: RolloutStageLive,
+	}
+	change := buildPlan(in).Changes[0]
+	if change.Action != deploy.ActionUpdate || !strings.Contains(change.Detail, "serves it at 100%") {
+		t.Errorf("change = %+v", change)
+	}
+}
+
+// Agent Runtime creates a revision on every spec update, identical or not, so
+// re-staging an unchanged candidate must only set its share.
+func TestRestagingAnUnchangedCandidateSendsNoSpec(t *testing.T) {
+	c := newRolloutClient()
+	agents := []AgentInfo{{Name: "assistant"}}
+	in := rolloutInput(RolloutStageCandidate, nil, "v2")
+	in.PackHash, in.ConfigHash = "p2", "c"
+	staged, err := applyEngines(context.Background(), c, in, agents, deployed(t, c), nil)
+	if err != nil {
+		t.Fatalf("candidate: %v", err)
+	}
+	c.calls = nil
+
+	in.Cfg.CandidatePercent = intPtr(10)
+	got, err := applyEngines(context.Background(), c, in, agents, staged, nil)
+	if err != nil {
+		t.Fatalf("restage: %v", err)
+	}
+	if strings.Join(c.calls, ",") != "traffic:1 90%, 2 10%" {
+		t.Errorf("calls = %v, want the share alone", c.calls)
+	}
+	if revisionID(got.Engines["assistant"].CandidateRevision) != "2" {
+		t.Errorf("entry = %+v, want candidate 2 kept", got.Engines["assistant"])
+	}
+}
+
+// A candidate replaced by a newer one has no traffic but keeps a warm
+// instance, so it is deleted.
+func TestAReplacedCandidateIsDeleted(t *testing.T) {
+	c := newRolloutClient()
+	agents := []AgentInfo{{Name: "assistant"}}
+	first, err := applyEngines(context.Background(), c, rolloutInput(RolloutStageCandidate, nil, "v2"),
+		agents, deployed(t, c), nil)
+	if err != nil {
+		t.Fatalf("first candidate: %v", err)
+	}
+	engine := first.Engines["assistant"].ResourceName
+	if _, err := applyEngines(context.Background(), c, rolloutInput(RolloutStageCandidate, nil, "v3"),
+		agents, first, nil); err != nil {
+		t.Fatalf("second candidate: %v", err)
+	}
+	revs, _ := c.ListRevisions(context.Background(), engine)
+	for _, r := range revs {
+		if revisionID(r.Name) == "2" {
+			t.Error("the replaced candidate revision 2 is still there")
+		}
+	}
+	if len(revs) != 2 {
+		t.Errorf("revisions = %v, want the stable 1 and the candidate 3", revs)
+	}
+}

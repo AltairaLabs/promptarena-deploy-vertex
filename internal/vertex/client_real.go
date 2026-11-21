@@ -49,6 +49,11 @@ func (c *realClient) SetTraffic(ctx context.Context, engine string, traffic *Tra
 	return c.rest.setTraffic(ctx, engine, traffic)
 }
 
+// DeleteRevision deletes a runtime revision over REST.
+func (c *realClient) DeleteRevision(ctx context.Context, revision string) error {
+	return c.rest.deleteRevision(ctx, revision)
+}
+
 // ListRevisions lists an engine's runtime revisions over REST.
 func (c *realClient) ListRevisions(ctx context.Context, engine string) ([]Revision, error) {
 	return c.rest.listRevisions(ctx, engine)

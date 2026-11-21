@@ -137,17 +137,7 @@ func engineChange(in *planInput, name string) deploy.ResourceChange {
 	}
 
 	if len(reasons) == 0 {
-		detail := "Up to date"
-		if prior.CandidateRevision != "" {
-			detail = fmt.Sprintf("Up to date; candidate revision %s is staged and not yet promoted",
-				revisionID(prior.CandidateRevision))
-		}
-		return deploy.ResourceChange{
-			Type:   ResTypeAgentRuntime,
-			Name:   name,
-			Action: deploy.ActionNoChange,
-			Detail: detail,
-		}
+		return unchangedEngine(in, name, prior)
 	}
 
 	return deploy.ResourceChange{
@@ -156,6 +146,32 @@ func engineChange(in *planInput, name string) deploy.ResourceChange {
 		Action: deploy.ActionUpdate,
 		Detail: strings.Join(reasons, ", ") + "; " + trafficIntent(in, prior),
 	}
+}
+
+// unchangedEngine is the change for an engine whose pack and config are as
+// deployed. With a candidate staged it is not a no-op: a live apply serves the
+// candidate, since it is the newest revision and the one this config
+// describes, and a candidate apply sets its share again.
+func unchangedEngine(in *planInput, name string, prior EngineState) deploy.ResourceChange {
+	change := deploy.ResourceChange{
+		Type:   ResTypeAgentRuntime,
+		Name:   name,
+		Action: deploy.ActionNoChange,
+		Detail: "Up to date",
+	}
+	if prior.CandidateRevision == "" {
+		return change
+	}
+	candidate := revisionID(prior.CandidateRevision)
+	change.Action = deploy.ActionUpdate
+	if in.Stage == RolloutStageCandidate {
+		change.Detail = fmt.Sprintf("Up to date; candidate revision %s stays staged at %d%%",
+			candidate, in.CandidatePercent)
+		return change
+	}
+	change.Detail = fmt.Sprintf("Up to date, but candidate revision %s is staged: "+
+		"a live apply serves it at 100%%", candidate)
+	return change
 }
 
 // trafficIntent says where an update leaves the traffic.

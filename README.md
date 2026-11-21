@@ -306,10 +306,16 @@ Things to know:
 - Traffic splitting and runtime revisions are a **preview** feature of the
   v1beta1 API. The published Go client does not model them, so the adapter makes
   these calls over REST with the same credentials.
-- A revision with 0% of the traffic still answers when it is called directly.
-  In testing it kept one warm instance, not `min_instances`, until it was given
-  traffic or deleted. Agent Runtime garbage-collects revisions with no traffic
-  beyond the engine's retention count.
+- A revision with 0% of the traffic still answers when it is called directly,
+  and it is not free. In testing a staged candidate kept one warm instance, not
+  `min_instances`. The revision a promote took the traffic from kept its
+  `min_instances` running. Agent Runtime garbage-collects revisions with no
+  traffic only beyond the engine's retention count. A candidate replaced by a
+  newer candidate is deleted by the adapter. Delete a revision you no longer
+  want to roll back to with
+  `DELETE https://<location>-aiplatform.googleapis.com/v1beta1/<engine>/runtimeRevisions/<id>`.
+- Every spec update creates a revision, even one identical to the last. So
+  re-applying an unchanged candidate sets its share without sending the spec.
 - **Changing an engine's Gateway binding archives every revision.** That
   includes the staged candidate, so promote has nothing to move to afterwards.
   Do not change the binding while a candidate is staged.

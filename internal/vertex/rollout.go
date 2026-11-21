@@ -59,7 +59,7 @@ func pinnedTo(revision string) *Traffic {
 // stable the rest. A zero percent pins stable, so the candidate is not listed
 // as a target at all.
 func splitBetween(stable, candidate string, percent int) *Traffic {
-	if percent <= 0 {
+	if percent <= 0 || candidate == "" {
 		return pinnedTo(stable)
 	}
 	return &Traffic{Targets: []TrafficTarget{
@@ -125,6 +125,18 @@ func newestRevision(revs []Revision) *Revision {
 	return &sorted[len(sorted)-1]
 }
 
+// servable drops revisions whose state says they cannot serve. A revision
+// with no state reported is kept: only a state other than ACTIVE excludes one.
+func servable(revs []Revision) []Revision {
+	out := make([]Revision, 0, len(revs))
+	for _, r := range revs {
+		if r.State == "" || r.State == EngineStateActive {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // numericID parses a revision's trailing id, or -1.
 func numericID(name string) int {
 	n, err := strconv.Atoi(revisionID(name))
@@ -160,7 +172,7 @@ func createdSince(before, after []Revision) *Revision {
 // mistaken for the stable revision.
 func servingRevision(traffic *Traffic, revs []Revision, recorded string) (string, error) {
 	if traffic == nil || traffic.AlwaysLatest || len(traffic.percents()) == 0 {
-		newest := newestRevision(revs)
+		newest := newestRevision(servable(revs))
 		if newest == nil {
 			return "", fmt.Errorf("the engine has no runtime revisions to keep serving")
 		}

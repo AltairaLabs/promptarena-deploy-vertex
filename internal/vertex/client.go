@@ -90,4 +90,7 @@ type gcpClient interface {
 	SetTraffic(ctx context.Context, engine string, traffic *Traffic) error
 	// ListRevisions returns every runtime revision of an engine.
 	ListRevisions(ctx context.Context, engine string) ([]Revision, error)
+	// DeleteRevision deletes one runtime revision and waits for it. The
+	// revision must have no traffic.
+	DeleteRevision(ctx context.Context, revision string) error
 }

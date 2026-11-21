@@ -167,3 +167,39 @@ func TestRESTNotFoundIsErrEngineNotFound(t *testing.T) {
 		t.Errorf("err = %v, want ErrEngineNotFound", err)
 	}
 }
+
+// A 404 on anything but the engine (here, a revision listing) is an ordinary
+// failure: read as a missing engine, apply would create a second one.
+func TestA404OffTheEngineIsNotEngineNotFound(t *testing.T) {
+	r, done := newTestREST(&fakeAgentRuntime{})
+	defer done()
+	_, err := r.listRevisions(context.Background(), "projects/p/locations/l/reasoningEngines/gone")
+	if err == nil || errors.Is(err, ErrEngineNotFound) {
+		t.Errorf("err = %v, want a plain failure", err)
+	}
+	err = r.setTraffic(context.Background(), "projects/p/locations/l/reasoningEngines/gone", pinnedTo("x"))
+	if err == nil || errors.Is(err, ErrEngineNotFound) {
+		t.Errorf("err = %v, want a plain failure", err)
+	}
+}
+
+func TestDeleteRevisionWaitsForTheOperation(t *testing.T) {
+	var deleted string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			deleted = r.URL.Path
+			_, _ = io.WriteString(w, `{"name":"projects/p/locations/l/operations/7"}`)
+		default:
+			_, _ = io.WriteString(w, `{"name":"projects/p/locations/l/operations/7","done":true}`)
+		}
+	}))
+	defer srv.Close()
+	r := &trafficREST{http: srv.Client(), endpoint: srv.URL, pollInterval: time.Millisecond}
+	if err := r.deleteRevision(context.Background(), restEngine+"/runtimeRevisions/2"); err != nil {
+		t.Fatalf("deleteRevision: %v", err)
+	}
+	if deleted != "/v1beta1/"+restEngine+"/runtimeRevisions/2" {
+		t.Errorf("deleted %q", deleted)
+	}
+}

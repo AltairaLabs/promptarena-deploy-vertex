@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 //	GET   v1beta1/{engine}                                   -> trafficConfig
 //	PATCH v1beta1/{engine}?updateMask=traffic_config         -> long-running operation
 //	GET   v1beta1/{engine}/runtimeRevisions?pageToken=…       -> reasoningEngineRuntimeRevisions[]
+//	DELETE v1beta1/{engine}/runtimeRevisions/{id}             -> long-running operation
 //
 // A traffic-only patch does not touch the spec, so it creates no revision.
 
@@ -88,6 +90,14 @@ type restOperation struct {
 	} `json:"error"`
 }
 
+// restStatusError is a non-200 response.
+type restStatusError struct {
+	status int
+	msg    string
+}
+
+func (e *restStatusError) Error() string { return e.msg }
+
 // do sends one request and decodes a 200 response into out.
 func (r *trafficREST) do(ctx context.Context, method, path string, body, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, restTimeout)
@@ -116,12 +126,10 @@ func (r *trafficREST) do(ctx context.Context, method, path string, body, out any
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("%s: %w", path, ErrEngineNotFound)
-	}
 	if resp.StatusCode != http.StatusOK {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, errorDetailLimit))
-		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(detail)))
+		return &restStatusError{status: resp.StatusCode,
+			msg: fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(detail)))}
 	}
 	if out == nil {
 		return nil
@@ -139,6 +147,13 @@ func (r *trafficREST) getTraffic(ctx context.Context, engine string) (*Traffic, 
 		TrafficConfig *restTrafficConfig `json:"trafficConfig"`
 	}
 	if err := r.do(ctx, http.MethodGet, engine, nil, &got); err != nil {
+		// Only a 404 on the engine itself means the engine is gone. A 404
+		// anywhere else (an operation, a revision) is an ordinary failure:
+		// reading it as a missing engine would make apply create a second one.
+		var statusErr *restStatusError
+		if errors.As(err, &statusErr) && statusErr.status == http.StatusNotFound {
+			return nil, fmt.Errorf("%s: %w", engine, ErrEngineNotFound)
+		}
 		return nil, fmt.Errorf("get traffic for %q: %w", engine, err)
 	}
 	return trafficFromREST(got.TrafficConfig), nil
@@ -215,6 +230,15 @@ func (r *trafficREST) wait(ctx context.Context, op *restOperation) error {
 		return fmt.Errorf("traffic update failed: %s (code %d)", op.Error.Message, op.Error.Code)
 	}
 	return nil
+}
+
+// deleteRevision deletes one runtime revision and waits for the operation.
+func (r *trafficREST) deleteRevision(ctx context.Context, revision string) error {
+	var op restOperation
+	if err := r.do(ctx, http.MethodDelete, revision, nil, &op); err != nil {
+		return fmt.Errorf("delete revision %q: %w", revision, err)
+	}
+	return r.wait(ctx, &op)
 }
 
 // listRevisions returns every runtime revision of an engine.

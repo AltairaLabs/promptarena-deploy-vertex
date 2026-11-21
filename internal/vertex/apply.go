@@ -138,6 +138,11 @@ func applyEngines(
 
 		engine, entry, err := applyOneEngine(ctx, client, in, agent, prior)
 		if err != nil {
+			// An engine that was updated before the failure is recorded as it
+			// now is, rather than as prior state remembered it.
+			if entry.ResourceName != "" {
+				next.Engines[agent.Name] = entry
+			}
 			return failedEngineState(next, prior, i, agent.Name, err),
 				fmt.Errorf("agent %q: %w", agent.Name, err)
 		}
@@ -218,18 +223,28 @@ func applyOneEngine(
 		entry  EngineState
 		err    error
 	)
-	if in.Cfg.rolloutStage() == RolloutStageCandidate {
+	switch {
+	case in.Cfg.rolloutStage() == RolloutStageCandidate && candidateIsCurrent(in, prior, existing):
+		engine, entry, err = restageShare(ctx, client, existing, in.Cfg.candidatePercent())
+	case in.Cfg.rolloutStage() == RolloutStageCandidate:
 		engine, entry, err = stageCandidate(ctx, client, existing, spec, in.Cfg.candidatePercent())
-	} else {
+	default:
 		engine, entry, err = updateLive(ctx, client, existing, spec)
 	}
-	if errors.Is(err, ErrEngineNotFound) {
+	if entry.ResourceName == "" && errors.Is(err, ErrEngineNotFound) {
 		return createEngine(ctx, client, spec)
 	}
 	if err != nil {
-		return nil, EngineState{}, err
+		return nil, entry, err
 	}
 	return engine, entry, nil
+}
+
+// candidateIsCurrent reports whether the staged candidate already runs this
+// pack and config, so re-staging needs no spec update.
+func candidateIsCurrent(in *engineInput, prior *State, existing EngineState) bool {
+	return existing.CandidateRevision != "" && existing.ServingRevision != "" &&
+		in.PackHash != "" && prior.PackHash == in.PackHash && prior.ConfigHash == in.ConfigHash
 }
 
 // deleteRemoved deletes engines whose agents are no longer in the pack.

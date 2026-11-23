@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/storage v1.64.0
 	github.com/AltairaLabs/PromptKit/runtime/v2 v2.23.0
 	github.com/AltairaLabs/PromptKit/sdk/v2 v2.23.0
-	github.com/AltairaLabs/promptarena/v2 v2.7.1-0.20261119195004-0aefe5967ca0
+	github.com/AltairaLabs/promptarena/v2 v2.8.0
 	github.com/googleapis/gax-go/v2 v2.23.0
 	golang.org/x/oauth2 v0.38.0
 	google.golang.org/api v0.293.0
